@@ -1,12 +1,17 @@
 // lib/main.dart
 
+// Flutter imports:
 import 'package:flutter/material.dart';
+
+// Package imports:
 import 'package:permission_handler/permission_handler.dart';
 import 'package:vad/vad.dart';
+
+// Project imports:
 import 'package:vad_example/recording.dart';
-import 'package:vad_example/vad_settings_dialog.dart';
-import 'package:vad_example/ui/vad_ui.dart';
 import 'package:vad_example/ui/app_theme.dart';
+import 'package:vad_example/ui/vad_ui.dart';
+import 'package:vad_example/vad_settings_dialog.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,7 +40,7 @@ class VadManager extends StatefulWidget {
 
 class _VadManagerState extends State<VadManager> {
   List<Recording> recordings = [];
-  late VadHandlerBase _vadHandler;
+  late VadHandler _vadHandler;
   bool isListening = false;
   bool isPaused = false;
   late VadSettings settings;
@@ -49,7 +54,7 @@ class _VadManagerState extends State<VadManager> {
   }
 
   void _initializeVad() {
-    _vadHandler = VadHandler.create(isDebug: false);
+    _vadHandler = VadHandler.create(isDebug: true);
     _setupVadHandler();
   }
 
@@ -63,8 +68,8 @@ class _VadManagerState extends State<VadManager> {
       negativeSpeechThreshold: settings.negativeSpeechThreshold,
       submitUserSpeechOnPause: settings.submitUserSpeechOnPause,
       model: settings.modelString,
-      baseAssetPath: 'assets/packages/vad/assets/',
-      onnxWASMBasePath: 'assets/packages/vad/assets/',
+      // baseAssetPath: '/assets/', // Alternative to using the CDN (see README.md)
+      // onnxWASMBasePath: '/assets/', // Alternative to using the CDN (see README.md)
     );
     setState(() {
       isListening = true;

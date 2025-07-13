@@ -7,7 +7,7 @@ homepage: https://keyur2maru.github.io/vad/
 
 
 environment:
-  sdk: ^3.2.3
+  sdk: ^3.3.0
   flutter: ">=1.17.0"
 
 platforms:
@@ -20,23 +20,14 @@ dependencies:
     sdk: flutter
   onnxruntime: ^1.4.1
   record: ^6.0.0
+  web: ^1.1.0
 
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
-
-flutter:
-  assets:
-    - packages/vad/assets/silero_vad_legacy.onnx
-    - packages/vad/assets/silero_vad_v5.onnx
-    - packages/vad/assets/bundle.min.js
-    - packages/vad/assets/vad.worklet.bundle.min.js
-    - packages/vad/assets/vad_web.js
-    - packages/vad/assets/ort.js
-    - packages/vad/assets/ort-wasm-simd.wasm
-    - packages/vad/assets/ort-wasm-simd-threaded.wasm
+  import_sorter: ^4.6.0
 
 topics:
   - vad

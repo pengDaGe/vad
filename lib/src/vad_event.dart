@@ -1,60 +1,62 @@
-// vad_event.dart
+// lib/src/vad_event.dart
+
+// Dart imports:
 import 'dart:typed_data';
 
-/// VadEventType enum used by non-web VAD handler
+/// Voice Activity Detection event types for real-time audio processing
 enum VadEventType {
-  /// Speech start event
+  /// Initial speech detection - fired when speech probability exceeds threshold
   start,
 
-  /// Real speech start event
+  /// Validated speech start - fired after minimum speech frames are detected
   realStart,
 
-  /// Speech end event
+  /// Speech end event - fired when speech concludes with audio data
   end,
 
-  /// Frame processed event
+  /// Frame processing event - emitted for each audio frame with probabilities
   frameProcessed,
 
-  /// VAD misfire event
+  /// False positive detection - speech ended before minimum frame requirement
   misfire,
 
-  /// Error event
+  /// Error during VAD processing
   error,
 }
 
-/// VadProbabilities class
+/// Speech probability scores from VAD model inference
 class SpeechProbabilities {
-  /// Probability of speech
+  /// Probability that the audio frame contains speech (0.0 to 1.0)
   final double isSpeech;
 
-  /// Probability of not speech
+  /// Probability that the audio frame does not contain speech (0.0 to 1.0)
   final double notSpeech;
 
-  /// Constructor
+  /// Creates speech probability scores
   SpeechProbabilities({required this.isSpeech, required this.notSpeech});
 }
 
-/// VadEvent class
+/// Voice Activity Detection event containing processing results and audio data
 class VadEvent {
-  /// VadEventType
+  /// The type of VAD event that occurred
   final VadEventType type;
 
-  /// Timestamp
+  /// Timestamp in seconds when the event occurred
   final double timestamp;
 
-  /// Message
+  /// Human-readable description of the event
   final String message;
 
-  /// Audio data
+  /// Raw audio data for speech segments (available for 'end' events)
   final Uint8List? audioData;
 
-  /// Speech probabilities
+  /// Speech probability scores (available for 'frameProcessed' events)
   final SpeechProbabilities? probabilities;
 
-  /// Frame data
+  /// Raw audio frame data as floating point values (available for 'frameProcessed' events)
   final List<double>? frameData;
 
-  /// Constructor
+  /// Creates a VAD event with the specified parameters
   VadEvent({
     required this.type,
     required this.timestamp,

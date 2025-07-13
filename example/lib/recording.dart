@@ -1,3 +1,4 @@
+// lib/recording.dart
 enum RecordingType {
   speechStart,
   realSpeechStart,

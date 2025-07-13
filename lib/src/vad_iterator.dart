@@ -1,12 +1,49 @@
-// vad_iterator.dart
-import 'package:vad/src/vad_iterator_base.dart';
+// lib/src/vad_iterator.dart
+
+// Dart imports:
+import 'dart:typed_data';
+
+// Project imports:
+import 'vad_event.dart';
+
 import 'vad_iterator_web.dart' if (dart.library.io) 'vad_iterator_non_web.dart'
     as implementation;
 
-/// VadIterator class
-class VadIterator {
-  /// Create a new instance of VadIterator
-  static VadIteratorBase create(
+/// Low-level Voice Activity Detection iterator for direct audio processing
+///
+/// Provides frame-by-frame VAD processing with platform-specific implementations.
+/// Used internally but can be used directly for more granular
+/// control over VAD processing, such as processing non-streaming audio data.
+abstract class VadIterator {
+  /// Reset VAD state and clear internal buffers
+  void reset();
+
+  /// Release model resources and cleanup memory
+  void release();
+
+  /// Set callback function to receive VAD events
+  void setVadEventCallback(VadEventCallback callback);
+
+  /// Process raw audio data bytes and emit VAD events
+  Future<void> processAudioData(Uint8List data);
+
+  /// Force speech end detection (useful for pause/stop scenarios)
+  void forceEndSpeech();
+
+  /// Factory method to create platform-appropriate VAD iterator
+  ///
+  /// [isDebug] - Enable debug logging
+  /// [sampleRate] - Audio sample rate (typically 16000 Hz)
+  /// [frameSamples] - Frame size in samples (512, 1024, or 1536 recommended)
+  /// [positiveSpeechThreshold] - Threshold for detecting speech start (0.0-1.0)
+  /// [negativeSpeechThreshold] - Threshold for detecting speech end (0.0-1.0)
+  /// [redemptionFrames] - Frames of silence before ending speech
+  /// [preSpeechPadFrames] - Frames to include before speech detection
+  /// [minSpeechFrames] - Minimum frames required for valid speech
+  /// [model] - Silero model version ('legacy' or 'v5')
+  /// [baseAssetPath] - Base URL or path for model assets
+  /// [onnxWASMBasePath] - Base URL for ONNX Runtime WASM files (Web only)
+  static Future<VadIterator> create(
       {required bool isDebug,
       required int sampleRate,
       required int frameSamples,
@@ -15,8 +52,11 @@ class VadIterator {
       required int redemptionFrames,
       required int preSpeechPadFrames,
       required int minSpeechFrames,
-      required bool submitUserSpeechOnPause,
-      required String model}) {
+      required String model,
+      String baseAssetPath =
+          'https://cdn.jsdelivr.net/npm/@keyurmaru/vad@0.0.1/',
+      String onnxWASMBasePath =
+          'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/'}) {
     return implementation.createVadIterator(
         isDebug: isDebug,
         sampleRate: sampleRate,
@@ -26,7 +66,11 @@ class VadIterator {
         redemptionFrames: redemptionFrames,
         preSpeechPadFrames: preSpeechPadFrames,
         minSpeechFrames: minSpeechFrames,
-        submitUserSpeechOnPause: submitUserSpeechOnPause,
-        model: model);
+        model: model,
+        baseAssetPath: baseAssetPath,
+        onnxWASMBasePath: onnxWASMBasePath);
   }
 }
+
+/// Callback function type for receiving VAD events during audio processing
+typedef VadEventCallback = void Function(VadEvent event);

@@ -1,72 +1,71 @@
+// lib/src/vad_iterator_non_web.dart
+// ignore_for_file: avoid_print
+
+// Dart imports:
+import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart';
+// Flutter imports:
 import 'package:flutter/services.dart';
-import 'package:onnxruntime/onnxruntime.dart';
-import 'package:vad/src/vad_iterator_base.dart';
 
+// Package imports:
+import 'package:onnxruntime/onnxruntime.dart';
+
+// Project imports:
+import 'package:vad/src/vad_iterator.dart';
 import 'vad_event.dart';
 
-/// Voice Activity Detection (VAD) iterator for real-time audio processing.
-class VadIteratorNonWeb implements VadIteratorBase {
-  /// Debug flag to enable/disable logging.
-  bool isDebug = false;
+/// Native platform VAD iterator using ONNX Runtime Flutter for real-time speech detection
+class VadIteratorNonWeb implements VadIterator {
+  /// Whether to enable debug logging
+  final bool _isDebug;
 
-  /// Threshold for positive speech detection.
-  double positiveSpeechThreshold = 0.5;
+  /// Positive speech threshold
+  final double _positiveSpeechThreshold;
 
-  /// Threshold for negative speech detection.
-  double negativeSpeechThreshold = 0.35;
+  /// Negative speech threshold
+  final double _negativeSpeechThreshold;
 
-  /// Number of frames for redemption after speech detection.
-  int redemptionFrames = 8;
+  /// Number of frames to wait before considering speech as valid
+  final int _redemptionFrames;
 
-  /// Number of samples in a frame.
-  /// Default is 1536 samples for 96ms at 16kHz sample rate.
-  /// * > WARNING! Silero VAD models were trained using 512, 1024, 1536 samples for 16000 sample rate and 256, 512, 768 samples for 8000 sample rate.
-  /// * > Values other than these may affect model perfomance!!
-  /// * In this context, audio fed to the VAD model always has sample rate 16000. It is probably a good idea to leave this at 1536.
-  int frameSamples = 1536;
+  /// Frame size in samples - WARNING: Use 512, 1024, or 1536 for best performance
+  /// as Silero models were trained on these specific frame sizes
+  final int _frameSamples;
 
-  /// Number of frames to pad before speech detection.
-  int preSpeechPadFrames = 1;
+  /// Number of frames to pad before speech is considered valid
+  final int _preSpeechPadFrames;
 
-  /// Minimum number of speech frames to consider as valid speech.
-  int minSpeechFrames = 3;
+  /// Minimum number of speech frames required to consider speech as valid
+  final int _minSpeechFrames;
 
-  /// Sample rate of the audio data.
-  int sampleRate = 16000;
+  /// Sample rate of the audio stream
+  final int _sampleRate;
 
-  /// Flag to submit user speech on pause/stop event.
-  bool submitUserSpeechOnPause = false;
+  /// Silero model version: 'legacy' (v4) or 'v5'
+  final String _model;
 
-  /// Model name
-  /// * 'legacy' for Silero VAD Legacy model
-  /// * 'v5' for Silero VAD v5 model
-  String model;
+  /// Whether the user is currently speaking
+  bool _speaking = false;
 
-  // Internal variables
-  /// Flag to indicate speech detection state.
-  bool speaking = false;
+  /// Number of frames since the last speech event
+  int _redemptionCounter = 0;
 
-  /// Counter for speech redemption frames.
-  int redemptionCounter = 0;
+  /// Number of speech frames detected
+  int _speechPositiveFrameCount = 0;
 
-  /// Counter for positive speech frames.
-  int speechPositiveFrameCount = 0;
-  int _currentSample = 0; // To track position in samples
+  /// Number of samples processed
+  int _currentSample = 0;
 
-  /// Buffers for pre-speech and speech data.
-  List<Float32List> preSpeechBuffer = [];
+  /// Buffer for pre-speech frames
+  final List<Float32List> _preSpeechBuffer = [];
 
-  /// Buffer for speech data.
-  List<Float32List> speechBuffer = [];
+  /// Buffer for speech frames
+  final List<Float32List> _speechBuffer = [];
 
-  // Model variables
   OrtSessionOptions? _sessionOptions;
   OrtSession? _session;
 
-  // Model states
   static const int _batch = 1;
   var _hide = List.filled(
       2, List.filled(_batch, Float32List.fromList(List.filled(64, 0.0))));
@@ -75,44 +74,119 @@ class VadIteratorNonWeb implements VadIteratorBase {
   var _state = List.filled(
       2, List.filled(_batch, Float32List.fromList(List.filled(128, 0.0))));
 
-  /// Callback for VAD events.
-  VadEventCallback? onVadEvent;
+  /// Callback for VAD events
+  VadEventCallback? _onVadEvent;
 
-  /// Byte buffer for audio data.
+  /// Buffer for audio data
   final List<int> _byteBuffer = [];
 
-  /// Size of a frame in bytes.
-  int frameByteCount;
+  /// Number of bytes per frame
+  final int _frameByteCount;
 
-  /// Create a new VAD iterator.
-  VadIteratorNonWeb({
-    required this.isDebug,
-    required this.sampleRate,
-    required this.frameSamples,
-    required this.positiveSpeechThreshold,
-    required this.negativeSpeechThreshold,
-    required this.redemptionFrames,
-    required this.preSpeechPadFrames,
-    required this.minSpeechFrames,
-    required this.submitUserSpeechOnPause,
-    required this.model,
-  }) : frameByteCount = frameSamples * 2;
+  /// Constructor
+  /// [isDebug] - Whether to enable debug logging
+  /// [sampleRate] - Sample rate of the audio stream
+  /// [frameSamples] - Frame size in samples
+  /// [positiveSpeechThreshold] - Positive speech threshold
+  /// [negativeSpeechThreshold] - Negative speech threshold
+  /// [redemptionFrames] - Number of frames to wait before considering speech as valid
+  /// [preSpeechPadFrames] - Number of frames to pad before speech is considered valid
+  /// [minSpeechFrames] - Minimum number of speech frames required to consider speech as valid
+  /// [model] - Silero model version: 'legacy' (v4) or 'v5'
+  /// [baseAssetPath] - Base URL or path for model assets
+  VadIteratorNonWeb._internal({
+    required bool isDebug,
+    required int sampleRate,
+    required int frameSamples,
+    required double positiveSpeechThreshold,
+    required double negativeSpeechThreshold,
+    required int redemptionFrames,
+    required int preSpeechPadFrames,
+    required int minSpeechFrames,
+    required String model,
+  })  : _isDebug = isDebug,
+        _sampleRate = sampleRate,
+        _frameSamples = frameSamples,
+        _positiveSpeechThreshold = positiveSpeechThreshold,
+        _negativeSpeechThreshold = negativeSpeechThreshold,
+        _redemptionFrames = redemptionFrames,
+        _preSpeechPadFrames = preSpeechPadFrames,
+        _minSpeechFrames = minSpeechFrames,
+        _model = model,
+        _frameByteCount = frameSamples * 2;
 
-  /// Initialize the VAD model from the given [modelPath].
-  @override
-  Future<void> initModel(String modelPath) async {
+  /// Create and initialize a VadIteratorNonWeb instance
+  static Future<VadIteratorNonWeb> create({
+    required bool isDebug,
+    required int sampleRate,
+    required int frameSamples,
+    required double positiveSpeechThreshold,
+    required double negativeSpeechThreshold,
+    required int redemptionFrames,
+    required int preSpeechPadFrames,
+    required int minSpeechFrames,
+    required String model,
+    required String baseAssetPath,
+    String? onnxWASMBasePath, // Unused on non-web platforms
+  }) async {
+    final instance = VadIteratorNonWeb._internal(
+      isDebug: isDebug,
+      sampleRate: sampleRate,
+      frameSamples: frameSamples,
+      positiveSpeechThreshold: positiveSpeechThreshold,
+      negativeSpeechThreshold: negativeSpeechThreshold,
+      redemptionFrames: redemptionFrames,
+      preSpeechPadFrames: preSpeechPadFrames,
+      minSpeechFrames: minSpeechFrames,
+      model: model,
+    );
+
+    // Initialize the model
+    final modelFile =
+        model == 'v5' ? 'silero_vad_v5.onnx' : 'silero_vad_legacy.onnx';
+    final modelPath = '$baseAssetPath$modelFile';
+    await instance._initModel(modelPath);
+
+    return instance;
+  }
+
+  Future<void> _initModel(String modelPath) async {
     try {
       _sessionOptions = OrtSessionOptions()
         ..setInterOpNumThreads(1)
         ..setIntraOpNumThreads(1)
         ..setSessionGraphOptimizationLevel(GraphOptimizationLevel.ortEnableAll);
-      final rawAssetFile = await rootBundle.load(modelPath);
-      final bytes = rawAssetFile.buffer.asUint8List();
+
+      Uint8List bytes;
+      if (modelPath.startsWith('http://') || modelPath.startsWith('https://')) {
+        final client = HttpClient();
+        try {
+          final request = await client.getUrl(Uri.parse(modelPath));
+          final response = await request.close();
+          if (response.statusCode == 200) {
+            final completer = BytesBuilder();
+            await for (final chunk in response) {
+              completer.add(chunk);
+            }
+            bytes = completer.toBytes();
+          } else {
+            throw Exception(
+                'HTTP ${response.statusCode}: Failed to download model from $modelPath');
+          }
+        } finally {
+          client.close();
+        }
+      } else {
+        // Load from asset bundle (local file)
+        final rawAssetFile = await rootBundle.load(modelPath);
+        bytes = rawAssetFile.buffer.asUint8List();
+      }
+
       _session = OrtSession.fromBuffer(bytes, _sessionOptions!);
-      if (isDebug) debugPrint('VAD model initialized from $modelPath.');
+      if (_isDebug) print('VAD model initialized from $modelPath.');
     } catch (e) {
-      debugPrint('VAD model initialization failed: $e');
-      onVadEvent?.call(VadEvent(
+      print('VAD model initialization failed: $e');
+      _onVadEvent?.call(VadEvent(
         type: VadEventType.error,
         timestamp: _getCurrentTimestamp(),
         message: 'VAD model initialization failed: $e',
@@ -120,15 +194,14 @@ class VadIteratorNonWeb implements VadIteratorBase {
     }
   }
 
-  /// Reset the VAD iterator.
   @override
   void reset() {
-    speaking = false;
-    redemptionCounter = 0;
-    speechPositiveFrameCount = 0;
+    _speaking = false;
+    _redemptionCounter = 0;
+    _speechPositiveFrameCount = 0;
     _currentSample = 0;
-    preSpeechBuffer.clear();
-    speechBuffer.clear();
+    _preSpeechBuffer.clear();
+    _speechBuffer.clear();
     _byteBuffer.clear();
     _hide = List.filled(
         2, List.filled(_batch, Float32List.fromList(List.filled(64, 0.0))));
@@ -138,7 +211,6 @@ class VadIteratorNonWeb implements VadIteratorBase {
         2, List.filled(_batch, Float32List.fromList(List.filled(128, 0.0))));
   }
 
-  /// Release the VAD iterator resources.
   @override
   void release() {
     _sessionOptions?.release();
@@ -148,29 +220,26 @@ class VadIteratorNonWeb implements VadIteratorBase {
     OrtEnv.instance.release();
   }
 
-  /// Set the VAD event callback.
   @override
   void setVadEventCallback(VadEventCallback callback) {
-    onVadEvent = callback;
+    _onVadEvent = callback;
   }
 
-  /// Process audio data.
   @override
-  Future<void> processAudioData(List<int> data) async {
+  Future<void> processAudioData(Uint8List data) async {
     _byteBuffer.addAll(data);
 
-    while (_byteBuffer.length >= frameByteCount) {
-      final frameBytes = _byteBuffer.sublist(0, frameByteCount);
-      _byteBuffer.removeRange(0, frameByteCount);
+    while (_byteBuffer.length >= _frameByteCount) {
+      final frameBytes = _byteBuffer.sublist(0, _frameByteCount);
+      _byteBuffer.removeRange(0, _frameByteCount);
       final frameData = _convertBytesToFloat32(Uint8List.fromList(frameBytes));
       await _processFrame(Float32List.fromList(frameData));
     }
   }
 
-  /// Process a single frame of audio data.
   Future<void> _processFrame(Float32List data) async {
     if (_session == null) {
-      debugPrint('VAD Iterator: Session not initialized.');
+      print('VAD Iterator: Session not initialized.');
       return;
     }
 
@@ -180,7 +249,7 @@ class VadIteratorNonWeb implements VadIteratorBase {
     final frameData = data.toList();
 
     // Emit the frame processed event
-    onVadEvent?.call(VadEvent(
+    _onVadEvent?.call(VadEvent(
       type: VadEventType.frameProcessed,
       timestamp: _getCurrentTimestamp(),
       message:
@@ -194,25 +263,23 @@ class VadIteratorNonWeb implements VadIteratorBase {
       element?.release();
     }
 
-    _currentSample += frameSamples;
+    _currentSample += _frameSamples;
     _handleStateTransitions(speechProb, data);
   }
 
-  /// Run model inference based on the selected model version
   Future<(double, List<OrtValue?>)> _runModelInference(Float32List data) async {
-    if (model == 'v5') {
+    if (_model == 'v5') {
       return _runV5ModelInference(data);
     } else {
       return _runLegacyModelInference(data);
     }
   }
 
-  /// Run inference for Silero VAD v5 model
   Future<(double, List<OrtValue?>)> _runV5ModelInference(
       Float32List data) async {
     final inputOrt =
-        OrtValueTensor.createTensorWithDataList(data, [_batch, frameSamples]);
-    final srOrt = OrtValueTensor.createTensorWithData(sampleRate);
+        OrtValueTensor.createTensorWithDataList(data, [_batch, _frameSamples]);
+    final srOrt = OrtValueTensor.createTensorWithData(_sampleRate);
     final stateOrt = OrtValueTensor.createTensorWithDataList(_state);
     final runOptions = OrtRunOptions();
 
@@ -232,12 +299,11 @@ class VadIteratorNonWeb implements VadIteratorBase {
     return (speechProb, outputs);
   }
 
-  /// Run inference for Silero VAD Legacy model
   Future<(double, List<OrtValue?>)> _runLegacyModelInference(
       Float32List data) async {
     final inputOrt =
-        OrtValueTensor.createTensorWithDataList(data, [_batch, frameSamples]);
-    final srOrt = OrtValueTensor.createTensorWithData(sampleRate);
+        OrtValueTensor.createTensorWithDataList(data, [_batch, _frameSamples]);
+    final srOrt = OrtValueTensor.createTensorWithData(_sampleRate);
     final hOrt = OrtValueTensor.createTensorWithDataList(_hide);
     final cOrt = OrtValueTensor.createTensorWithDataList(_cell);
     final runOptions = OrtRunOptions();
@@ -262,35 +328,34 @@ class VadIteratorNonWeb implements VadIteratorBase {
     return (speechProb, outputs);
   }
 
-  /// Handle state transitions based on speech probability
   void _handleStateTransitions(double speechProb, Float32List data) {
-    if (speechProb >= positiveSpeechThreshold) {
+    if (speechProb >= _positiveSpeechThreshold) {
       // Speech-positive frame
-      if (!speaking) {
-        speaking = true;
-        onVadEvent?.call(VadEvent(
+      if (!_speaking) {
+        _speaking = true;
+        _onVadEvent?.call(VadEvent(
           type: VadEventType.start,
           timestamp: _getCurrentTimestamp(),
           message:
               'Speech started at ${_getCurrentTimestamp().toStringAsFixed(3)}s',
         ));
-        speechBuffer.addAll(preSpeechBuffer);
-        preSpeechBuffer.clear();
+        _speechBuffer.addAll(_preSpeechBuffer);
+        _preSpeechBuffer.clear();
       }
-      redemptionCounter = 0;
-      speechBuffer.add(data);
-      speechPositiveFrameCount++;
+      _redemptionCounter = 0;
+      _speechBuffer.add(data);
+      _speechPositiveFrameCount++;
 
       // Add validation event when speech frames exceed minimum threshold
-      if (speechPositiveFrameCount == minSpeechFrames) {
-        onVadEvent?.call(VadEvent(
+      if (_speechPositiveFrameCount == _minSpeechFrames) {
+        _onVadEvent?.call(VadEvent(
           type: VadEventType.realStart,
           timestamp: _getCurrentTimestamp(),
           message:
               'Speech validated at ${_getCurrentTimestamp().toStringAsFixed(3)}s',
         ));
       }
-    } else if (speechProb < negativeSpeechThreshold) {
+    } else if (speechProb < _negativeSpeechThreshold) {
       // Handle speech-negative frame
       _handleSpeechNegativeFrame(data);
     } else {
@@ -299,17 +364,16 @@ class VadIteratorNonWeb implements VadIteratorBase {
     }
   }
 
-  /// Handle speech-negative frame
   void _handleSpeechNegativeFrame(Float32List data) {
-    if (speaking) {
-      if (++redemptionCounter >= redemptionFrames) {
+    if (_speaking) {
+      if (++_redemptionCounter >= _redemptionFrames) {
         // End of speech
-        speaking = false;
-        redemptionCounter = 0;
+        _speaking = false;
+        _redemptionCounter = 0;
 
-        if (speechPositiveFrameCount >= minSpeechFrames) {
+        if (_speechPositiveFrameCount >= _minSpeechFrames) {
           // Valid speech segment
-          onVadEvent?.call(VadEvent(
+          _onVadEvent?.call(VadEvent(
             type: VadEventType.end,
             timestamp: _getCurrentTimestamp(),
             message:
@@ -318,7 +382,7 @@ class VadIteratorNonWeb implements VadIteratorBase {
           ));
         } else {
           // Misfire
-          onVadEvent?.call(VadEvent(
+          _onVadEvent?.call(VadEvent(
             type: VadEventType.misfire,
             timestamp: _getCurrentTimestamp(),
             message:
@@ -326,10 +390,10 @@ class VadIteratorNonWeb implements VadIteratorBase {
           ));
         }
         // Reset counters and buffers
-        speechPositiveFrameCount = 0;
-        speechBuffer.clear();
+        _speechPositiveFrameCount = 0;
+        _speechBuffer.clear();
       } else {
-        speechBuffer.add(data);
+        _speechBuffer.add(data);
       }
     } else {
       // Not speaking, maintain pre-speech buffer
@@ -337,22 +401,20 @@ class VadIteratorNonWeb implements VadIteratorBase {
     }
   }
 
-  /// Handle frame with probability between thresholds
   void _handleIntermediateFrame(Float32List data) {
-    if (speaking) {
-      speechBuffer.add(data);
-      redemptionCounter = 0;
+    if (_speaking) {
+      _speechBuffer.add(data);
+      _redemptionCounter = 0;
     } else {
       _addToPreSpeechBuffer(data);
     }
   }
 
-  /// Forcefully end speech detection on pause/stop event.
   @override
   void forceEndSpeech() {
-    if (speaking && speechPositiveFrameCount >= minSpeechFrames) {
-      if (isDebug) debugPrint('VAD Iterator: Forcing speech end.');
-      onVadEvent?.call(VadEvent(
+    if (_speaking && _speechPositiveFrameCount >= _minSpeechFrames) {
+      if (_isDebug) print('VAD Iterator: Forcing speech end.');
+      _onVadEvent?.call(VadEvent(
         type: VadEventType.end,
         timestamp: _getCurrentTimestamp(),
         message:
@@ -360,31 +422,31 @@ class VadIteratorNonWeb implements VadIteratorBase {
         audioData: _combineSpeechBuffer(),
       ));
       // Reset state
-      speaking = false;
-      redemptionCounter = 0;
-      speechPositiveFrameCount = 0;
-      speechBuffer.clear();
-      preSpeechBuffer.clear();
+      _speaking = false;
+      _redemptionCounter = 0;
+      _speechPositiveFrameCount = 0;
+      _speechBuffer.clear();
+      _preSpeechBuffer.clear();
     }
   }
 
   void _addToPreSpeechBuffer(Float32List data) {
-    preSpeechBuffer.add(data);
-    while (preSpeechBuffer.length > preSpeechPadFrames) {
-      preSpeechBuffer.removeAt(0);
+    _preSpeechBuffer.add(data);
+    while (_preSpeechBuffer.length > _preSpeechPadFrames) {
+      _preSpeechBuffer.removeAt(0);
     }
   }
 
   double _getCurrentTimestamp() {
-    return _currentSample / sampleRate;
+    return _currentSample / _sampleRate;
   }
 
   Uint8List _combineSpeechBuffer() {
     final int totalLength =
-        speechBuffer.fold(0, (sum, frame) => sum + frame.length);
+        _speechBuffer.fold(0, (sum, frame) => sum + frame.length);
     final Float32List combined = Float32List(totalLength);
     int offset = 0;
-    for (var frame in speechBuffer) {
+    for (var frame in _speechBuffer) {
       combined.setRange(offset, offset + frame.length, frame);
       offset += frame.length;
     }
@@ -401,8 +463,19 @@ class VadIteratorNonWeb implements VadIteratorBase {
   }
 }
 
-/// Create VadHandlerNonWeb instance
-VadIteratorBase createVadIterator({
+/// Create a VAD iterator for the non-web platform
+/// [isDebug] - Whether to enable debug logging
+/// [sampleRate] - Sample rate of the audio stream
+/// [frameSamples] - Frame size in samples
+/// [positiveSpeechThreshold] - Positive speech threshold
+/// [negativeSpeechThreshold] - Negative speech threshold
+/// [redemptionFrames] - Number of frames to wait before considering speech as valid
+/// [preSpeechPadFrames] - Number of frames to pad before speech is considered valid
+/// [minSpeechFrames] - Minimum number of speech frames required to consider speech as valid
+/// [model] - Silero model version: 'legacy' (v4) or 'v5'
+/// [baseAssetPath] - Base URL or path for model assets
+/// [onnxWASMBasePath] - Base URL for ONNX Runtime WASM files (unused on non-web platforms)
+Future<VadIterator> createVadIterator({
   required bool isDebug,
   required int sampleRate,
   required int frameSamples,
@@ -411,10 +484,11 @@ VadIteratorBase createVadIterator({
   required int redemptionFrames,
   required int preSpeechPadFrames,
   required int minSpeechFrames,
-  required bool submitUserSpeechOnPause,
   required String model,
+  required String baseAssetPath,
+  required String onnxWASMBasePath,
 }) {
-  return VadIteratorNonWeb(
+  return VadIteratorNonWeb.create(
     isDebug: isDebug,
     sampleRate: sampleRate,
     frameSamples: frameSamples,
@@ -423,7 +497,8 @@ VadIteratorBase createVadIterator({
     redemptionFrames: redemptionFrames,
     preSpeechPadFrames: preSpeechPadFrames,
     minSpeechFrames: minSpeechFrames,
-    submitUserSpeechOnPause: submitUserSpeechOnPause,
     model: model,
+    baseAssetPath: baseAssetPath,
+    onnxWASMBasePath: onnxWASMBasePath,
   );
 }

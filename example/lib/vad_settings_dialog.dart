@@ -1,3 +1,6 @@
+// lib/vad_settings_dialog.dart
+
+// Flutter imports:
 import 'package:flutter/material.dart';
 
 enum RecordingModel {

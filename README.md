@@ -87,19 +87,40 @@ Before integrating the VAD Package into your Flutter application, ensure that yo
 #### Web
 To use VAD on the web, include the following scripts within the head and body tags respectively in the `web/index.html` file to load the necessary VAD libraries:
 
+**Option 1: Using CDN (Default)**
 ```html
 <head>
   ...
-  <script src="assets/packages/vad/assets/ort.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.wasm.min.js"></script>
   ...
 </head>
-...
-<body>
-...
-<script src="assets/packages/vad/assets/bundle.min.js" defer></script>
-<script src="assets/packages/vad/assets/vad_web.js" defer></script>
-...
-</body>
+```
+
+**Option 2: Using Local Assets (Offline/Self-hosted)**
+If you prefer to bundle all assets locally instead of using CDN:
+
+1. Download the required files to your `assets/` directory:
+   - [ort.wasm.min.js](https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.wasm.min.js)
+   - [ort-wasm-simd-threaded.wasm](https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort-wasm-simd-threaded.wasm)
+   - [ort-wasm-simd-threaded.mjs](https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort-wasm-simd-threaded.mjs)
+   - [silero_vad_v5.onnx](https://cdn.jsdelivr.net/npm/@keyurmaru/vad@0.0.1/silero_vad_v5.onnx) and/or [silero_vad_legacy.onnx](https://cdn.jsdelivr.net/npm/@keyurmaru/vad@0.0.1/silero_vad_legacy.onnx)
+
+2. Update your `web/index.html`:
+```html
+<head>
+  ...
+  <script src="assets/ort.wasm.min.js"></script>
+  ...
+</head>
+```
+
+3. Configure your VAD handler to use local assets:
+```dart
+await vadHandler.startListening(
+  baseAssetPath: '/assets/',        // For VAD model files
+  onnxWASMBasePath: '/assets/',     // For ONNX Runtime WASM files
+  // ... other parameters
+);
 ```
 
 You can also refer to the [VAD Example App](https://github.com/keyur2maru/vad/blob/master/example/web/index.html) for a complete example.
@@ -353,7 +374,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
 
 #### `create`
-Creates a new instance of the `VadHandler` with optional debugging enabled with the `isDebug` parameter and optional configurable model path with the `modelPath` parameter but it's only applicable for the iOS and Android platforms. It has no effect on the Web platform.
+Creates a new instance of the `VadHandler` with optional debugging enabled with the `isDebug` parameter. Model files are loaded from CDN by default but can be customized using the `baseAssetPath` parameter in `startListening`.
 
 #### `startListening`
 Starts the VAD with configurable parameters. Returns a `Future<void>` that completes when the VAD session has started.
@@ -361,7 +382,8 @@ Notes:
 - The sample rate is fixed at 16kHz, which means when using legacy model with default frameSamples value, one frame is equal to 1536 samples or 96ms.
 - For Silero VAD v5 model, frameSamples must be set to 512 samples unlike the previous version, so one frame is equal to 32ms.
 - `model` parameter can be set to 'legacy' or 'v5' to use the respective VAD model. Default is 'legacy'.
-- `baseAssetPath` and `onnxWASMBasePath` are the default paths for the VAD JavaScript library and onnxruntime WASM files respectively. Currently, they are bundled with the package but can be overridden if needed by providing custom paths or CDN URLs. **<u>Only applicable for the Web platform.</u>**
+- `baseAssetPath` specifies the base URL/path for VAD model files (.onnx). Defaults to CDN (`https://cdn.jsdelivr.net/npm/@keyurmaru/vad@0.0.1/`) but can be overridden for custom hosting. **<u>Applicable for all platforms.</u>**
+- `onnxWASMBasePath` specifies the base URL/path for onnxruntime WASM files. Defaults to CDN (`https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/`) but can be overridden for custom hosting. **<u>Only applicable for the Web platform.</u>**
 - `recordConfig` allows you to provide custom recording configuration for non-web platforms (iOS/Android). If not provided, default configuration with 16kHz sample rate, PCM16 encoding, echo cancellation, auto gain, and noise suppression will be used. **<u>Only applicable for non-web platforms (iOS/Android).</u>**
 
 ```dart
@@ -374,8 +396,8 @@ Future<void> startListening({
   int minSpeechFrames = 3,
   bool submitUserSpeechOnPause = false,
   String model = 'legacy',
-  String baseAssetPath = 'assets/packages/vad/assets/',
-  String onnxWASMBasePath = 'assets/packages/vad/assets/',
+  String baseAssetPath = 'https://cdn.jsdelivr.net/npm/@keyurmaru/vad@0.0.1/',
+  String onnxWASMBasePath = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/',
   RecordConfig? recordConfig,
 });
 ```

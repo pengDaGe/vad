@@ -1,9 +1,14 @@
 // lib/ui/vad_ui.dart
 
+// Flutter imports:
 import 'package:flutter/material.dart';
+
+// Package imports:
 import 'package:audioplayers/audioplayers.dart' as audioplayers;
-import 'package:vad_example/recording.dart';
+
+// Project imports:
 import 'package:vad_example/audio_utils.dart';
+import 'package:vad_example/recording.dart';
 import 'package:vad_example/vad_settings_dialog.dart';
 
 class VadUIController {
