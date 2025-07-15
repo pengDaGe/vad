@@ -34,6 +34,8 @@ class VadHandlerWeb implements VadHandler {
       StreamController<void>.broadcast();
   final StreamController<String> _onErrorController =
       StreamController<String>.broadcast();
+  final StreamController<List<double>> _onEmitChunkController =
+      StreamController<List<double>>.broadcast();
 
   bool _isDebug = false;
   MicVAD? _micVAD;
@@ -65,6 +67,9 @@ class VadHandlerWeb implements VadHandler {
   Stream<String> get onError => _onErrorController.stream;
 
   @override
+  Stream<List<double>> get onEmitChunk => _onEmitChunkController.stream;
+
+  @override
   Future<void> startListening(
       {double positiveSpeechThreshold = 0.5,
       double negativeSpeechThreshold = 0.35,
@@ -78,7 +83,9 @@ class VadHandlerWeb implements VadHandler {
           'https://cdn.jsdelivr.net/npm/@keyurmaru/vad@0.0.1/',
       String onnxWASMBasePath =
           'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/',
-      RecordConfig? recordConfig}) async {
+      RecordConfig? recordConfig,
+      int endSpeechPadFrames = 1,
+      int numFramesToEmit = 0}) async {
     // Adjust parameters for v5 model if using defaults
     if (model == 'v5') {
       if (preSpeechPadFrames == 1) {
@@ -93,6 +100,9 @@ class VadHandlerWeb implements VadHandler {
       if (minSpeechFrames == 3) {
         minSpeechFrames = 9;
       }
+      if (endSpeechPadFrames == 1) {
+        endSpeechPadFrames = 3;
+      }
     }
 
     if (_isDebug) {
@@ -106,7 +116,9 @@ class VadHandlerWeb implements VadHandler {
           'submitUserSpeechOnPause: $submitUserSpeechOnPause, '
           'model: $model, '
           'baseAssetPath: $baseAssetPath, '
-          'onnxWASMBasePath: $onnxWASMBasePath');
+          'onnxWASMBasePath: $onnxWASMBasePath, '
+          'endSpeechPadFrames: $endSpeechPadFrames, '
+          'numFramesToEmit: $numFramesToEmit');
     }
 
     try {
@@ -118,6 +130,10 @@ class VadHandlerWeb implements VadHandler {
         _micVAD!.start();
         _isPaused = false;
       } else if (_micVAD == null) {
+        if (_isDebug) {
+          print('VadHandlerWeb: Creating AudioNodeVadOptions');
+        }
+
         final options = AudioNodeVadOptions(
           positiveSpeechThreshold: positiveSpeechThreshold,
           negativeSpeechThreshold: negativeSpeechThreshold,
@@ -131,7 +147,13 @@ class VadHandlerWeb implements VadHandler {
           baseAssetPath: baseAssetPath,
           onnxWASMBasePath: onnxWASMBasePath,
           isDebug: _isDebug,
+          endSpeechPadFrames: endSpeechPadFrames,
+          numFramesToEmit: numFramesToEmit,
         );
+
+        if (_isDebug) {
+          print('VadHandlerWeb: Creating MicVAD');
+        }
 
         _micVAD = await MicVAD.create(options);
         _micVAD!.start();
@@ -202,6 +224,16 @@ class VadHandlerWeb implements VadHandler {
         }
         _onErrorController.add(event.message);
         break;
+      case VadEventType.chunk:
+        if (_isDebug) {
+          print('VadHandlerWeb: onEmitChunk');
+        }
+        if (event.audioData != null) {
+          final int16Data = Int16List.view(event.audioData!.buffer);
+          final floatData = int16Data.map((e) => e / 32768.0).toList();
+          _onEmitChunkController.add(floatData);
+        }
+        break;
     }
   }
 
@@ -221,6 +253,7 @@ class VadHandlerWeb implements VadHandler {
     _onRealSpeechStartController.close();
     _onVADMisfireController.close();
     _onErrorController.close();
+    _onEmitChunkController.close();
   }
 
   @override

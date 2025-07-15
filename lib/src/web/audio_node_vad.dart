@@ -1,4 +1,9 @@
 // lib/src/web/audio_node_vad.dart
+//
+// This file implements audio processing for VAD on web platform.
+// It attempts to use AudioWorklet API for better performance, but falls back
+// to ScriptProcessorNode if AudioWorklet is not available (older browsers,
+// non-secure contexts, or other compatibility issues).
 
 // ignore_for_file: public_member_api_docs, avoid_print
 
@@ -132,8 +137,10 @@ class AudioNodeVadOptions {
   final double negativeSpeechThreshold;
   final int redemptionFrames;
   final int preSpeechPadFrames;
+  final int endSpeechPadFrames;
   final int frameSamples;
   final int minSpeechFrames;
+  final int numFramesToEmit;
   final bool submitUserSpeechOnPause;
   final void Function(VadEvent) onVadEvent;
   final String model;
@@ -146,8 +153,10 @@ class AudioNodeVadOptions {
     this.negativeSpeechThreshold = 0.35,
     this.redemptionFrames = 8,
     this.preSpeechPadFrames = 1,
+    this.endSpeechPadFrames = 1,
     this.frameSamples = 1536,
     this.minSpeechFrames = 3,
+    this.numFramesToEmit = 0,
     this.submitUserSpeechOnPause = false,
     required this.onVadEvent,
     required this.model,
@@ -165,10 +174,14 @@ class AudioNodeVAD {
   late final Resampler _resampler;
 
   web.AudioWorkletNode? _workletNode;
+  web.ScriptProcessorNode? _scriptProcessorNode;
   web.GainNode? _gainNode;
   bool _active = false;
   int _processedFrames = 0;
   String? _processorBlobUrl;
+  bool _useAudioWorklet = true;
+  int _frameCount = 0;
+  final List<double> _inputBuffer = [];
 
   AudioNodeVAD._(this._context, this._options);
 
@@ -182,6 +195,10 @@ class AudioNodeVAD {
   }
 
   Future<void> _initialize() async {
+    if (_options.isDebug) {
+      print('AudioNodeVAD._initialize: Starting initialization');
+    }
+
     // Create VAD iterator
     _vadIterator = await VadIteratorWeb.create(
       isDebug: _options.isDebug,
@@ -195,89 +212,225 @@ class AudioNodeVAD {
       model: _options.model,
       baseAssetPath: _options.baseAssetPath,
       onnxWASMBasePath: _options.onnxWASMBasePath,
+      endSpeechPadFrames: _options.endSpeechPadFrames,
+      numFramesToEmit: _options.numFramesToEmit,
     );
+
+    if (_options.isDebug) {
+      print('AudioNodeVAD._initialize: VAD iterator created');
+    }
 
     // Set the callback
     _vadIterator.setVadEventCallback(_options.onVadEvent);
 
-    // Setup audio processing with AudioWorklet
-    await _setupAudioWorklet();
+    // Create resampler for audio processing
+    if (_options.isDebug) {
+      print(
+          'AudioNodeVAD: Creating resampler with nativeSampleRate: ${_context.sampleRate.toInt()}, targetSampleRate: 16000');
+    }
+    _resampler = Resampler(ResamplerOptions(
+      nativeSampleRate: _context.sampleRate.toInt(),
+      targetSampleRate: 16000, // VAD models expect 16kHz
+      targetFrameSize: _options.frameSamples,
+    ));
+
+    // Check if AudioWorklet is available using js_interop_unsafe
+    bool audioWorkletAvailable = false;
+    try {
+      // Use js_interop_unsafe to check if the property exists
+      final contextJS = _context as JSObject;
+      audioWorkletAvailable = contextJS.has('audioWorklet');
+
+      if (_options.isDebug) {
+        print('AudioNodeVAD: AudioWorklet available: $audioWorkletAvailable');
+      }
+    } catch (e) {
+      if (_options.isDebug) {
+        print('AudioNodeVAD: Error checking for AudioWorklet availability: $e');
+      }
+      audioWorkletAvailable = false;
+    }
+
+    if (audioWorkletAvailable) {
+      // Try to setup audio processing with AudioWorklet first
+      try {
+        await _setupAudioWorklet();
+        _useAudioWorklet = true;
+        if (_options.isDebug) {
+          print('AudioNodeVAD: Using AudioWorklet for audio processing');
+        }
+      } catch (e) {
+        if (_options.isDebug) {
+          print(
+              'AudioNodeVAD: AudioWorklet setup failed, falling back to ScriptProcessorNode: $e');
+        }
+        // Fall back to ScriptProcessorNode
+        _useAudioWorklet = false;
+        await _setupScriptProcessor();
+        if (_options.isDebug) {
+          print('AudioNodeVAD: Using ScriptProcessorNode for audio processing');
+        }
+      }
+    } else {
+      // AudioWorklet not available, use ScriptProcessorNode directly
+      if (_options.isDebug) {
+        print(
+            'AudioNodeVAD: AudioWorklet not available, using ScriptProcessorNode for audio processing');
+      }
+      _useAudioWorklet = false;
+      await _setupScriptProcessor();
+    }
   }
 
   Future<void> _setupAudioWorklet() async {
+    // Get audioWorklet reference using js_interop_unsafe
+    final contextJS = _context as JSObject;
+    final audioWorklet = contextJS['audioWorklet']!;
+
+    // Generate processor code
+    final processorCode = generateVadProcessorCode();
+
+    // Create blob URL for the processor code
+    final blob = web.Blob(
+      [processorCode.toJS].toJS,
+      web.BlobPropertyBag(type: 'application/javascript'),
+    );
+    _processorBlobUrl = web.URL.createObjectURL(blob);
+
+    // Add the module to the audio worklet using js_interop_unsafe
+    final promise = (audioWorklet as JSObject)
+        .callMethod('addModule'.toJS, _processorBlobUrl!.toJS);
+    await (promise as JSPromise).toDart;
+
+    // Create AudioWorkletNode with options
+    final processorOptions = {
+      'bufferSize': 4096,
+      'targetSampleRate': 16000,
+      'frameSamples': _options.frameSamples,
+      'isDebug': _options.isDebug,
+    }.jsify()! as JSObject;
+
+    final nodeOptions = web.AudioWorkletNodeOptions(
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [1].map((e) => e.toJS).toList().toJS,
+      processorOptions: processorOptions,
+    );
+
+    _workletNode = web.AudioWorkletNode(
+      _context,
+      'vad-audio-processor',
+      nodeOptions,
+    );
+
+    // Create gain node with zero gain to handle the audio chain
+    _gainNode = _context.createGain();
+    _gainNode!.gain.value = 0.0;
+
+    // Set up message port communication
+    _setupMessagePort();
+
+    // Set up processor error handler
+    _setupProcessorErrorHandler();
+
+    // Connect audio chain
+    _workletNode!.connect(_gainNode!);
+    _gainNode!.connect(_context.destination);
+
+    if (_options.isDebug) {
+      print(
+          'AudioNodeVAD: Audio setup complete. Context state: ${_context.state}');
+    }
+  }
+
+  Future<void> _setupScriptProcessor() async {
     try {
-      // Generate processor code
-      final processorCode = generateVadProcessorCode();
+      // Create ScriptProcessorNode
+      // Using 4096 buffer size for good balance between latency and performance
+      const bufferSize = 4096;
 
-      // Create blob URL for the processor code
-      final blob = web.Blob(
-        [processorCode.toJS].toJS,
-        web.BlobPropertyBag(type: 'application/javascript'),
-      );
-      _processorBlobUrl = web.URL.createObjectURL(blob);
-
-      // Add the module to the audio worklet
-      await _context.audioWorklet.addModule(_processorBlobUrl!).toDart;
-
-      // Create resampler for audio processing
-      if (_options.isDebug) {
-        print(
-            'AudioNodeVAD: Creating resampler with nativeSampleRate: ${_context.sampleRate.toInt()}, targetSampleRate: 16000');
-      }
-      _resampler = Resampler(ResamplerOptions(
-        nativeSampleRate: _context.sampleRate.toInt(),
-        targetSampleRate: 16000, // VAD models expect 16kHz
-        targetFrameSize: _options.frameSamples,
-      ));
-
-      // Create AudioWorkletNode with options
-      final processorOptions = {
-        'bufferSize': 4096,
-        'targetSampleRate': 16000,
-        'frameSamples': _options.frameSamples,
-        'isDebug': _options.isDebug,
-      }.jsify()! as JSObject;
-
-      final nodeOptions = web.AudioWorkletNodeOptions(
-        numberOfInputs: 1,
-        numberOfOutputs: 1,
-        outputChannelCount: [1].map((e) => e.toJS).toList().toJS,
-        processorOptions: processorOptions,
-      );
-
-      _workletNode = web.AudioWorkletNode(
-        _context,
-        'vad-audio-processor',
-        nodeOptions,
-      );
+      // Create the ScriptProcessorNode using js_interop_unsafe
+      final contextJS = _context as JSObject;
+      _scriptProcessorNode = contextJS.callMethod(
+        'createScriptProcessor'.toJS,
+        bufferSize.toJS,
+        1.toJS, // input channels
+        1.toJS, // output channels
+      ) as web.ScriptProcessorNode;
 
       // Create gain node with zero gain to handle the audio chain
       _gainNode = _context.createGain();
       _gainNode!.gain.value = 0.0;
 
-      // Set up message port communication
-      _setupMessagePort();
-
-      // Set up processor error handler
-      _setupProcessorErrorHandler();
+      // Set up the audio processing event handler
+      _setupScriptProcessorHandler();
 
       // Connect audio chain
-      _workletNode!.connect(_gainNode!);
+      _scriptProcessorNode!.connect(_gainNode!);
       _gainNode!.connect(_context.destination);
 
       if (_options.isDebug) {
         print(
-            'AudioNodeVAD: Audio setup complete. Context state: ${_context.state}');
+            'AudioNodeVAD: ScriptProcessor setup complete. Buffer size: $bufferSize, Context state: ${_context.state}');
       }
     } catch (e) {
-      print('AudioNodeVAD: Error setting up audio worklet: $e');
+      print('AudioNodeVAD: Error setting up ScriptProcessorNode: $e');
       _options.onVadEvent(VadEvent(
         type: VadEventType.error,
         timestamp: DateTime.now().millisecondsSinceEpoch / 1000,
-        message: 'Failed to setup audio worklet: $e',
+        message: 'Failed to setup ScriptProcessorNode: $e',
       ));
       rethrow;
     }
+  }
+
+  void _setupScriptProcessorHandler() {
+    final processorJS = _scriptProcessorNode as JSObject;
+    processorJS['onaudioprocess'] = ((web.AudioProcessingEvent event) {
+      if (!_active) return;
+
+      try {
+        // Get input buffer
+        final inputBuffer = event.inputBuffer;
+        final inputData = inputBuffer.getChannelData(0);
+
+        final float32List = inputData.toDart;
+
+        // Add samples to our buffer
+        for (var i = 0; i < float32List.length; i++) {
+          _inputBuffer.add(float32List[i]);
+        }
+
+        // Process complete frames
+        const bufferSize = 4096;
+        while (_inputBuffer.length >= bufferSize) {
+          final frame =
+              Float32List.fromList(_inputBuffer.take(bufferSize).toList());
+          _inputBuffer.removeRange(0, bufferSize);
+
+          _frameCount++;
+          _processedFrames++;
+
+          // Process through resampler
+          final frames = _resampler.process(frame);
+          for (final resampledFrame in frames) {
+            _vadIterator.processFrame(resampledFrame);
+          }
+
+          if (_options.isDebug && _frameCount % 100 == 0) {
+            print(
+                'AudioNodeVAD: ScriptProcessor processed $_frameCount frames');
+          }
+        }
+      } catch (e) {
+        print('AudioNodeVAD: Error in ScriptProcessor audio processing: $e');
+        _options.onVadEvent(VadEvent(
+          type: VadEventType.error,
+          timestamp: DateTime.now().millisecondsSinceEpoch / 1000,
+          message: 'ScriptProcessor audio processing error: $e',
+        ));
+      }
+    }).toJS;
   }
 
   void _setupMessagePort() {
@@ -356,7 +509,10 @@ class AudioNodeVAD {
       print('AudioNodeVAD: Pausing (processed $_processedFrames frames)');
     }
     _active = false;
-    _workletNode?.port.postMessage({'type': 'pause'}.jsify());
+
+    if (_useAudioWorklet && _workletNode != null) {
+      _workletNode!.port.postMessage({'type': 'pause'}.jsify());
+    }
 
     if (_options.submitUserSpeechOnPause) {
       _vadIterator.forceEndSpeech();
@@ -369,12 +525,21 @@ class AudioNodeVAD {
     }
     _active = true;
     _processedFrames = 0;
+    _frameCount = 0;
+    _inputBuffer.clear();
     _vadIterator.reset();
-    _workletNode?.port.postMessage({'type': 'start'}.jsify());
+
+    if (_useAudioWorklet && _workletNode != null) {
+      _workletNode!.port.postMessage({'type': 'start'}.jsify());
+    }
   }
 
   void connect(web.AudioNode node) {
-    node.connect(_workletNode!);
+    if (_useAudioWorklet && _workletNode != null) {
+      node.connect(_workletNode!);
+    } else if (!_useAudioWorklet && _scriptProcessorNode != null) {
+      node.connect(_scriptProcessorNode!);
+    }
   }
 
   void destroy() {
@@ -389,11 +554,19 @@ class AudioNodeVAD {
 
     _active = false;
 
-    _workletNode?.port.postMessage({'type': 'destroy'}.jsify());
-    _workletNode?.disconnect();
+    if (_useAudioWorklet && _workletNode != null) {
+      _workletNode!.port.postMessage({'type': 'destroy'}.jsify());
+      _workletNode!.disconnect();
+    } else if (!_useAudioWorklet && _scriptProcessorNode != null) {
+      _scriptProcessorNode!.disconnect();
+      // Clear the event handler
+      final processorJS = _scriptProcessorNode as JSObject;
+      processorJS['onaudioprocess'] = null;
+    }
+
     _gainNode?.disconnect();
 
-    // Clean up blob URL
+    // Clean up blob URL if we used AudioWorklet
     if (_processorBlobUrl != null) {
       web.URL.revokeObjectURL(_processorBlobUrl!);
     }
@@ -418,31 +591,37 @@ class MicVAD {
 
   static Future<MicVAD> create(AudioNodeVadOptions options) async {
     try {
-      // Get microphone stream
-      final audioConstraints = {
-        'channelCount': 1,
-        'echoCancellation': true,
-        'autoGainControl': true,
-        'noiseSuppression': true,
-      }.jsify()! as JSObject;
+      if (options.isDebug) {
+        print('MicVAD.create: Starting microphone initialization');
+      }
 
+      // Get microphone stream
       final constraints = {
-        'audio': audioConstraints,
+        'audio': {
+          'channelCount': 1,
+          'echoCancellation': true,
+          'autoGainControl': true,
+          'noiseSuppression': true,
+        },
       }.jsify()! as web.MediaStreamConstraints;
 
       final stream = await web.window.navigator.mediaDevices
           .getUserMedia(constraints)
           .toDart;
 
+      if (options.isDebug) {
+        print('MicVAD.create: Got media stream, creating audio context');
+      }
+
       final audioContext = web.AudioContext();
       final sourceNode = audioContext.createMediaStreamSource(stream);
-
       final audioNodeVAD = await AudioNodeVAD.create(audioContext, options);
       audioNodeVAD.connect(sourceNode);
 
       return MicVAD._(audioContext, stream, audioNodeVAD, sourceNode);
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('Error creating MicVAD: $e');
+      print('Stack trace: $stackTrace');
       rethrow;
     }
   }

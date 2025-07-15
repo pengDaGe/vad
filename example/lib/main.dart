@@ -45,6 +45,7 @@ class _VadManagerState extends State<VadManager> {
   bool isPaused = false;
   late VadSettings settings;
   final VadUIController _uiController = VadUIController();
+  int _chunkCounter = 0;
 
   @override
   void initState() {
@@ -59,15 +60,19 @@ class _VadManagerState extends State<VadManager> {
   }
 
   void _startListening() async {
+    _chunkCounter = 0; // Reset chunk counter for new session
     await _vadHandler.startListening(
       frameSamples: settings.frameSamples,
       minSpeechFrames: settings.minSpeechFrames,
       preSpeechPadFrames: settings.preSpeechPadFrames,
       redemptionFrames: settings.redemptionFrames,
+      endSpeechPadFrames: settings.endSpeechPadFrames,
       positiveSpeechThreshold: settings.positiveSpeechThreshold,
       negativeSpeechThreshold: settings.negativeSpeechThreshold,
       submitUserSpeechOnPause: settings.submitUserSpeechOnPause,
       model: settings.modelString,
+      numFramesToEmit:
+          settings.enableChunkEmission ? settings.numFramesToEmit : 0,
       // baseAssetPath: '/assets/', // Alternative to using the CDN (see README.md)
       // onnxWASMBasePath: '/assets/', // Alternative to using the CDN (see README.md)
     );
@@ -152,6 +157,21 @@ class _VadManagerState extends State<VadManager> {
       });
       _uiController.scrollToBottom?.call();
       debugPrint('Error: $message');
+    });
+
+    _vadHandler.onEmitChunk.listen((List<double> samples) {
+      if (settings.enableChunkEmission) {
+        setState(() {
+          recordings.add(Recording(
+            samples: samples,
+            type: RecordingType.chunk,
+            chunkIndex: _chunkCounter++,
+          ));
+        });
+        _uiController.scrollToBottom?.call();
+        debugPrint(
+            'Audio chunk emitted #$_chunkCounter (${samples.length} samples)');
+      }
     });
   }
 

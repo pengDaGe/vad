@@ -17,6 +17,7 @@ class VadSettings {
   int minSpeechFrames;
   int preSpeechPadFrames;
   int redemptionFrames;
+  int endSpeechPadFrames;
 
   // Threshold settings
   double positiveSpeechThreshold;
@@ -25,15 +26,22 @@ class VadSettings {
   // Behavior settings
   bool submitUserSpeechOnPause;
 
+  // Chunk emission settings
+  int numFramesToEmit;
+  bool enableChunkEmission;
+
   VadSettings({
     this.model = RecordingModel.v5,
     this.frameSamples = 512,
     this.minSpeechFrames = 8,
     this.preSpeechPadFrames = 30,
     this.redemptionFrames = 24,
+    this.endSpeechPadFrames = 8,
     this.positiveSpeechThreshold = 0.5,
     this.negativeSpeechThreshold = 0.35,
     this.submitUserSpeechOnPause = false,
+    this.numFramesToEmit = 10,
+    this.enableChunkEmission = true,
   });
 
   // Clone the settings
@@ -44,9 +52,12 @@ class VadSettings {
       minSpeechFrames: minSpeechFrames,
       preSpeechPadFrames: preSpeechPadFrames,
       redemptionFrames: redemptionFrames,
+      endSpeechPadFrames: endSpeechPadFrames,
       positiveSpeechThreshold: positiveSpeechThreshold,
       negativeSpeechThreshold: negativeSpeechThreshold,
       submitUserSpeechOnPause: submitUserSpeechOnPause,
+      numFramesToEmit: numFramesToEmit,
+      enableChunkEmission: enableChunkEmission,
     );
   }
 
@@ -403,6 +414,114 @@ class _VadSettingsDialogState extends State<VadSettingsDialog> {
               ],
             ),
             const SizedBox(height: 16),
+
+            // End Speech Pad Frames
+            const Text('End Speech Pad Frames:',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Expanded(
+                  child: Slider(
+                    value: tempSettings.endSpeechPadFrames.toDouble(),
+                    min: 1,
+                    max: 100,
+                    divisions: 99,
+                    onChanged: (value) {
+                      setState(() {
+                        tempSettings.endSpeechPadFrames = value.toInt();
+                      });
+                    },
+                  ),
+                ),
+                SizedBox(
+                  width: 80,
+                  child: TextField(
+                    keyboardType: TextInputType.number,
+                    controller: TextEditingController(
+                        text: tempSettings.endSpeechPadFrames.toString()),
+                    onChanged: (value) {
+                      final parsed = int.tryParse(value);
+                      if (parsed != null) {
+                        setState(() {
+                          tempSettings.endSpeechPadFrames = parsed;
+                        });
+                      }
+                    },
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Text(
+                '${tempSettings.calculateTimeFromFrames(tempSettings.endSpeechPadFrames)} padding after speech ends'),
+            const SizedBox(height: 16),
+
+            // Chunk Emission Settings
+            Row(
+              children: [
+                Checkbox(
+                  value: tempSettings.enableChunkEmission,
+                  onChanged: (value) {
+                    setState(() {
+                      tempSettings.enableChunkEmission = value ?? false;
+                    });
+                  },
+                ),
+                const Text('Enable Chunk Emission (Live Audio)'),
+              ],
+            ),
+            const SizedBox(height: 8),
+
+            // Num Frames to Emit (only shown when chunk emission is enabled)
+            if (tempSettings.enableChunkEmission) ...[
+              const Text('Frames Per Chunk:',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Expanded(
+                    child: Slider(
+                      value: tempSettings.numFramesToEmit.toDouble(),
+                      min: 1,
+                      max: 50,
+                      divisions: 49,
+                      onChanged: (value) {
+                        setState(() {
+                          tempSettings.numFramesToEmit = value.toInt();
+                        });
+                      },
+                    ),
+                  ),
+                  SizedBox(
+                    width: 80,
+                    child: TextField(
+                      keyboardType: TextInputType.number,
+                      controller: TextEditingController(
+                          text: tempSettings.numFramesToEmit.toString()),
+                      onChanged: (value) {
+                        final parsed = int.tryParse(value);
+                        if (parsed != null) {
+                          setState(() {
+                            tempSettings.numFramesToEmit = parsed;
+                          });
+                        }
+                      },
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              Text(
+                  'Emit chunk every ${tempSettings.calculateTimeFromFrames(tempSettings.numFramesToEmit)}'),
+              const SizedBox(height: 16),
+            ],
 
             // Submit on Pause
             Row(

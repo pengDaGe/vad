@@ -34,6 +34,9 @@ abstract class VadHandler {
   /// Stream of error events with descriptive error messages
   Stream<String> get onError;
 
+  /// Stream of audio chunk events containing intermediate audio data during speech
+  Stream<List<double>> get onEmitChunk;
+
   /// Start or resume listening for speech events with configurable parameters
   ///
   /// Default values are optimized for the legacy (v4) model. When using model='v5',
@@ -54,6 +57,8 @@ abstract class VadHandler {
   /// [baseAssetPath] - Base URL or path for model assets, default: 'https://cdn.jsdelivr.net/npm/@keyurmaru/vad@0.0.1/'
   /// [onnxWASMBasePath] - Base URL for ONNX Runtime WASM files (Web only), default: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/'
   /// [recordConfig] - Custom audio recording configuration (native platforms only)
+  /// [endSpeechPadFrames] - Number of redemption frames to append to speech end, default: 1
+  /// [numFramesToEmit] - Number of frames to accumulate before emitting chunk, default: 0 (disabled)
   Future<void> startListening(
       {double positiveSpeechThreshold = 0.5,
       double negativeSpeechThreshold = 0.35,
@@ -67,7 +72,9 @@ abstract class VadHandler {
           'https://cdn.jsdelivr.net/npm/@keyurmaru/vad@0.0.1/',
       String onnxWASMBasePath =
           'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/',
-      RecordConfig? recordConfig});
+      RecordConfig? recordConfig,
+      int endSpeechPadFrames = 1,
+      int numFramesToEmit = 0});
 
   /// Stop listening and clean up audio resources
   Future<void> stopListening();

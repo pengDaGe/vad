@@ -22,6 +22,9 @@ enum VadEventType {
 
   /// Error during VAD processing
   error,
+
+  /// Audio chunk event - emitted when numFramesToEmit frames accumulate during speech
+  chunk,
 }
 
 /// Speech probability scores from VAD model inference

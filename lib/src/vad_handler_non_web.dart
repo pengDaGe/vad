@@ -31,6 +31,7 @@ class VadHandlerNonWeb implements VadHandler {
   final _onRealSpeechStartController = StreamController<void>.broadcast();
   final _onVADMisfireController = StreamController<void>.broadcast();
   final _onErrorController = StreamController<String>.broadcast();
+  final _onEmitChunkController = StreamController<List<double>>.broadcast();
 
   @override
   Stream<List<double>> get onSpeechEnd => _onSpeechEndController.stream;
@@ -50,6 +51,9 @@ class VadHandlerNonWeb implements VadHandler {
 
   @override
   Stream<String> get onError => _onErrorController.stream;
+
+  @override
+  Stream<List<double>> get onEmitChunk => _onEmitChunkController.stream;
 
   /// Constructor
   /// [isDebug] - Whether to enable debug logging (default: false)
@@ -91,6 +95,13 @@ class VadHandlerNonWeb implements VadHandler {
       case VadEventType.error:
         _onErrorController.add(event.message);
         break;
+      case VadEventType.chunk:
+        if (event.audioData != null) {
+          final int16List = event.audioData!.buffer.asInt16List();
+          final floatSamples = int16List.map((e) => e / 32768.0).toList();
+          _onEmitChunkController.add(floatSamples);
+        }
+        break;
     }
   }
 
@@ -108,7 +119,9 @@ class VadHandlerNonWeb implements VadHandler {
           'https://cdn.jsdelivr.net/npm/@keyurmaru/vad@0.0.1/',
       String onnxWASMBasePath =
           'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/',
-      RecordConfig? recordConfig}) async {
+      RecordConfig? recordConfig,
+      int endSpeechPadFrames = 1,
+      int numFramesToEmit = 0}) async {
     // Adjust parameters for v5 model if using defaults
     if (model == 'v5') {
       if (preSpeechPadFrames == 1) {
@@ -122,6 +135,9 @@ class VadHandlerNonWeb implements VadHandler {
       }
       if (minSpeechFrames == 3) {
         minSpeechFrames = 9;
+      }
+      if (endSpeechPadFrames == 1) {
+        endSpeechPadFrames = 3;
       }
     }
 
@@ -144,6 +160,8 @@ class VadHandlerNonWeb implements VadHandler {
         model: model,
         baseAssetPath: baseAssetPath,
         onnxWASMBasePath: onnxWASMBasePath,
+        endSpeechPadFrames: endSpeechPadFrames,
+        numFramesToEmit: numFramesToEmit,
       );
       _vadIterator.setVadEventCallback(_handleVadEvent);
       _submitUserSpeechOnPause = submitUserSpeechOnPause;
@@ -220,6 +238,7 @@ class VadHandlerNonWeb implements VadHandler {
     _onRealSpeechStartController.close();
     _onVADMisfireController.close();
     _onErrorController.close();
+    _onEmitChunkController.close();
   }
 }
 

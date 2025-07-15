@@ -169,8 +169,9 @@ class _VadUIState extends State<VadUI> {
 
   Widget _buildRecordingItem(Recording recording, int index) {
     final bool isCurrentlyPlaying = _currentlyPlayingIndex == index;
-    final bool hasAudio =
-        recording.type == RecordingType.speechEnd && recording.samples != null;
+    final bool hasAudio = (recording.type == RecordingType.speechEnd ||
+            recording.type == RecordingType.chunk) &&
+        recording.samples != null;
 
     // Icon and color based on recording type
     IconData typeIcon;
@@ -209,6 +210,17 @@ class _VadUIState extends State<VadUI> {
         iconColor = Colors.white;
         backgroundColor = Colors.deepPurple;
         typeTitle = 'Error Event';
+        break;
+      case RecordingType.chunk:
+        typeIcon = hasAudio
+            ? (isCurrentlyPlaying && _isPlaying
+                ? Icons.pause
+                : Icons.play_arrow)
+            : Icons.graphic_eq;
+        iconColor = hasAudio ? Colors.teal[100]! : Colors.white;
+        backgroundColor = hasAudio ? Colors.teal[900]! : Colors.teal;
+        typeTitle =
+            'Audio Chunk ${recording.chunkIndex != null ? '#${recording.chunkIndex}' : ''}';
         break;
     }
 

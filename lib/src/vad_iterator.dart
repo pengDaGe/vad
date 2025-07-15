@@ -43,6 +43,8 @@ abstract class VadIterator {
   /// [model] - Silero model version ('legacy' or 'v5')
   /// [baseAssetPath] - Base URL or path for model assets
   /// [onnxWASMBasePath] - Base URL for ONNX Runtime WASM files (Web only)
+  /// [endSpeechPadFrames] - Frames to append after speech detection
+  /// [numFramesToEmit] - Number of frames before emitting chunk events
   static Future<VadIterator> create(
       {required bool isDebug,
       required int sampleRate,
@@ -56,7 +58,9 @@ abstract class VadIterator {
       String baseAssetPath =
           'https://cdn.jsdelivr.net/npm/@keyurmaru/vad@0.0.1/',
       String onnxWASMBasePath =
-          'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/'}) {
+          'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/',
+      int endSpeechPadFrames = 1,
+      int numFramesToEmit = 0}) {
     return implementation.createVadIterator(
         isDebug: isDebug,
         sampleRate: sampleRate,
@@ -68,7 +72,9 @@ abstract class VadIterator {
         minSpeechFrames: minSpeechFrames,
         model: model,
         baseAssetPath: baseAssetPath,
-        onnxWASMBasePath: onnxWASMBasePath);
+        onnxWASMBasePath: onnxWASMBasePath,
+        endSpeechPadFrames: endSpeechPadFrames,
+        numFramesToEmit: numFramesToEmit);
   }
 }
 

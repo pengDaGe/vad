@@ -36,8 +36,14 @@ class VadIteratorNonWeb implements VadIterator {
   /// Number of frames to pad before speech is considered valid
   final int _preSpeechPadFrames;
 
+  /// Number of frames to pad after speech is considered ended
+  final int _endSpeechPadFrames;
+
   /// Minimum number of speech frames required to consider speech as valid
   final int _minSpeechFrames;
+
+  /// Number of frames to accumulate before emitting chunk
+  final int _numFramesToEmit;
 
   /// Sample rate of the audio stream
   final int _sampleRate;
@@ -62,6 +68,9 @@ class VadIteratorNonWeb implements VadIterator {
 
   /// Buffer for speech frames
   final List<Float32List> _speechBuffer = [];
+
+  /// Index in speech buffer where current speech segment starts
+  int _speechStartIndex = 0;
 
   OrtSessionOptions? _sessionOptions;
   OrtSession? _session;
@@ -94,6 +103,8 @@ class VadIteratorNonWeb implements VadIterator {
   /// [minSpeechFrames] - Minimum number of speech frames required to consider speech as valid
   /// [model] - Silero model version: 'legacy' (v4) or 'v5'
   /// [baseAssetPath] - Base URL or path for model assets
+  /// [endSpeechPadFrames] - Number of frames to pad after speech ends
+  /// [numFramesToEmit] - Number of frames to accumulate before emitting chunk
   VadIteratorNonWeb._internal({
     required bool isDebug,
     required int sampleRate,
@@ -104,6 +115,8 @@ class VadIteratorNonWeb implements VadIterator {
     required int preSpeechPadFrames,
     required int minSpeechFrames,
     required String model,
+    required int endSpeechPadFrames,
+    required int numFramesToEmit,
   })  : _isDebug = isDebug,
         _sampleRate = sampleRate,
         _frameSamples = frameSamples,
@@ -113,6 +126,8 @@ class VadIteratorNonWeb implements VadIterator {
         _preSpeechPadFrames = preSpeechPadFrames,
         _minSpeechFrames = minSpeechFrames,
         _model = model,
+        _endSpeechPadFrames = endSpeechPadFrames,
+        _numFramesToEmit = numFramesToEmit,
         _frameByteCount = frameSamples * 2;
 
   /// Create and initialize a VadIteratorNonWeb instance
@@ -128,6 +143,8 @@ class VadIteratorNonWeb implements VadIterator {
     required String model,
     required String baseAssetPath,
     String? onnxWASMBasePath, // Unused on non-web platforms
+    int endSpeechPadFrames = 1,
+    int numFramesToEmit = 0,
   }) async {
     final instance = VadIteratorNonWeb._internal(
       isDebug: isDebug,
@@ -139,6 +156,8 @@ class VadIteratorNonWeb implements VadIterator {
       preSpeechPadFrames: preSpeechPadFrames,
       minSpeechFrames: minSpeechFrames,
       model: model,
+      endSpeechPadFrames: endSpeechPadFrames,
+      numFramesToEmit: numFramesToEmit,
     );
 
     // Initialize the model
@@ -200,6 +219,7 @@ class VadIteratorNonWeb implements VadIterator {
     _redemptionCounter = 0;
     _speechPositiveFrameCount = 0;
     _currentSample = 0;
+    _speechStartIndex = 0;
     _preSpeechBuffer.clear();
     _speechBuffer.clear();
     _byteBuffer.clear();
@@ -333,6 +353,7 @@ class VadIteratorNonWeb implements VadIterator {
       // Speech-positive frame
       if (!_speaking) {
         _speaking = true;
+        _speechStartIndex = 0;
         _onVadEvent?.call(VadEvent(
           type: VadEventType.start,
           timestamp: _getCurrentTimestamp(),
@@ -362,6 +383,24 @@ class VadIteratorNonWeb implements VadIterator {
       // Probability between thresholds
       _handleIntermediateFrame(data);
     }
+
+    // Handle chunk emission during speech
+    if (_speaking &&
+        _numFramesToEmit > 0 &&
+        _speechBuffer.length - _speechStartIndex >= _numFramesToEmit &&
+        _redemptionCounter <= _endSpeechPadFrames) {
+      final framesToSend = _speechBuffer.sublist(
+          _speechStartIndex, _speechStartIndex + _numFramesToEmit);
+      final audio = _combineSpeechBufferList(framesToSend);
+      _speechStartIndex = _speechStartIndex + _numFramesToEmit;
+      _onVadEvent?.call(VadEvent(
+        type: VadEventType.chunk,
+        timestamp: _getCurrentTimestamp(),
+        message:
+            'Audio chunk emitted at ${_getCurrentTimestamp().toStringAsFixed(3)}s',
+        audioData: audio,
+      ));
+    }
   }
 
   void _handleSpeechNegativeFrame(Float32List data) {
@@ -373,13 +412,37 @@ class VadIteratorNonWeb implements VadIterator {
 
         if (_speechPositiveFrameCount >= _minSpeechFrames) {
           // Valid speech segment
+          // Calculate the audio buffer with endSpeechPadFrames
+          final frames = _speechBuffer;
+          final audioBufferPad = frames.sublist(
+              0, frames.length - (_redemptionFrames - _endSpeechPadFrames));
+          final audio = _combineSpeechBufferList(audioBufferPad);
+
           _onVadEvent?.call(VadEvent(
             type: VadEventType.end,
             timestamp: _getCurrentTimestamp(),
             message:
                 'Speech ended at ${_getCurrentTimestamp().toStringAsFixed(3)}s',
-            audioData: _combineSpeechBuffer(),
+            audioData: audio,
           ));
+
+          // Handle final chunk emission - emit all accumulated frames since last onEmitChunk
+          if (_numFramesToEmit > 0) {
+            final speechEndIndex =
+                _speechBuffer.length - _redemptionFrames + _endSpeechPadFrames;
+            if (_speechStartIndex < speechEndIndex) {
+              final framesToSend =
+                  _speechBuffer.sublist(_speechStartIndex, speechEndIndex);
+              final chunkAudio = _combineSpeechBufferList(framesToSend);
+              _onVadEvent?.call(VadEvent(
+                type: VadEventType.chunk,
+                timestamp: _getCurrentTimestamp(),
+                message:
+                    'Final audio chunk emitted at ${_getCurrentTimestamp().toStringAsFixed(3)}s',
+                audioData: chunkAudio,
+              ));
+            }
+          }
         } else {
           // Misfire
           _onVadEvent?.call(VadEvent(
@@ -391,7 +454,22 @@ class VadIteratorNonWeb implements VadIterator {
         }
         // Reset counters and buffers
         _speechPositiveFrameCount = 0;
-        _speechBuffer.clear();
+        _speechStartIndex = 0;
+
+        // Preserve frames between endSpeechPadFrames and redemptionFrames for next pre-speech buffer
+        if (_endSpeechPadFrames < _redemptionFrames) {
+          final framesToKeep = _speechBuffer.sublist(
+              _speechBuffer.length - (_redemptionFrames - _endSpeechPadFrames));
+          _speechBuffer.clear();
+          _preSpeechBuffer.clear();
+          _preSpeechBuffer.addAll(framesToKeep);
+          // Ensure we don't exceed preSpeechPadFrames limit
+          while (_preSpeechBuffer.length > _preSpeechPadFrames) {
+            _preSpeechBuffer.removeAt(0);
+          }
+        } else {
+          _speechBuffer.clear();
+        }
       } else {
         _speechBuffer.add(data);
       }
@@ -427,6 +505,7 @@ class VadIteratorNonWeb implements VadIterator {
       _speechPositiveFrameCount = 0;
       _speechBuffer.clear();
       _preSpeechBuffer.clear();
+      _speechStartIndex = 0;
     }
   }
 
@@ -456,6 +535,20 @@ class VadIteratorNonWeb implements VadIterator {
     return audioData;
   }
 
+  Uint8List _combineSpeechBufferList(List<Float32List> frames) {
+    final int totalLength = frames.fold(0, (sum, frame) => sum + frame.length);
+    final Float32List combined = Float32List(totalLength);
+    int offset = 0;
+    for (var frame in frames) {
+      combined.setRange(offset, offset + frame.length, frame);
+      offset += frame.length;
+    }
+    final int16Data = Int16List.fromList(
+        combined.map((e) => (e * 32767).clamp(-32768, 32767).toInt()).toList());
+    final Uint8List audioData = Uint8List.view(int16Data.buffer);
+    return audioData;
+  }
+
   List<double> _convertBytesToFloat32(Uint8List data) {
     final buffer = data.buffer;
     final int16List = Int16List.view(buffer);
@@ -475,6 +568,8 @@ class VadIteratorNonWeb implements VadIterator {
 /// [model] - Silero model version: 'legacy' (v4) or 'v5'
 /// [baseAssetPath] - Base URL or path for model assets
 /// [onnxWASMBasePath] - Base URL for ONNX Runtime WASM files (unused on non-web platforms)
+/// [endSpeechPadFrames] - Number of frames to pad after speech ends
+/// [numFramesToEmit] - Number of frames to accumulate before emitting chunk
 Future<VadIterator> createVadIterator({
   required bool isDebug,
   required int sampleRate,
@@ -487,6 +582,8 @@ Future<VadIterator> createVadIterator({
   required String model,
   required String baseAssetPath,
   required String onnxWASMBasePath,
+  int endSpeechPadFrames = 1,
+  int numFramesToEmit = 0,
 }) {
   return VadIteratorNonWeb.create(
     isDebug: isDebug,
@@ -500,5 +597,7 @@ Future<VadIterator> createVadIterator({
     model: model,
     baseAssetPath: baseAssetPath,
     onnxWASMBasePath: onnxWASMBasePath,
+    endSpeechPadFrames: endSpeechPadFrames,
+    numFramesToEmit: numFramesToEmit,
   );
 }
