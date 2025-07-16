@@ -346,7 +346,7 @@ class _VadUIState extends State<VadUI> {
                   children: [
                     Center(
                       child: Text(
-                        'Model: ${widget.settings.model == RecordingModel.v5 ? "v5" : "v4 (Legacy)"}',
+                        'Model: ${widget.settings.model == VadModel.v5 ? "v5" : "v4"}',
                         style: TextStyle(color: Colors.grey[400]),
                       ),
                     ),

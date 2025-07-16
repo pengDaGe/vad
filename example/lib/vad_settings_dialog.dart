@@ -3,14 +3,14 @@
 // Flutter imports:
 import 'package:flutter/material.dart';
 
-enum RecordingModel {
-  legacy,
+enum VadModel {
+  v4,
   v5,
 }
 
 class VadSettings {
   // Model type
-  RecordingModel model;
+  VadModel model;
 
   // Frame settings
   int frameSamples;
@@ -31,7 +31,7 @@ class VadSettings {
   bool enableChunkEmission;
 
   VadSettings({
-    this.model = RecordingModel.v5,
+    this.model = VadModel.v5,
     this.frameSamples = 512,
     this.minSpeechFrames = 8,
     this.preSpeechPadFrames = 30,
@@ -63,7 +63,7 @@ class VadSettings {
 
   // Reset to defaults based on model type
   void resetToDefaults() {
-    if (model == RecordingModel.legacy) {
+    if (model == VadModel.v4) {
       // Default v4 values
       frameSamples = 1536;
       minSpeechFrames = 3;
@@ -71,6 +71,9 @@ class VadSettings {
       redemptionFrames = 8;
       positiveSpeechThreshold = 0.5;
       negativeSpeechThreshold = 0.35;
+      endSpeechPadFrames = 8;
+      numFramesToEmit = 10;
+      enableChunkEmission = false;
     } else {
       // Default v5 values
       frameSamples = 512;
@@ -79,11 +82,14 @@ class VadSettings {
       redemptionFrames = 24;
       positiveSpeechThreshold = 0.5;
       negativeSpeechThreshold = 0.35;
+      endSpeechPadFrames = 8;
+      numFramesToEmit = 10;
+      enableChunkEmission = true;
     }
   }
 
   // Get the model string for the VAD library
-  String get modelString => model == RecordingModel.legacy ? 'legacy' : 'v5';
+  String get modelString => model == VadModel.v4 ? 'v4' : 'v5';
 
   // Helper function to calculate time from frames
   String calculateTimeFromFrames(int frames) {
@@ -100,6 +106,11 @@ class VadSettings {
   String calculateFrameTime() {
     double milliseconds = (frameSamples / 16000) * 1000;
     return '${milliseconds.toStringAsFixed(0)} ms';
+  }
+
+  @override
+  String toString() {
+    return 'VadSettings(model: $model, frameSamples: $frameSamples, minSpeechFrames: $minSpeechFrames, preSpeechPadFrames: $preSpeechPadFrames, redemptionFrames: $redemptionFrames, endSpeechPadFrames: $endSpeechPadFrames, positiveSpeechThreshold: $positiveSpeechThreshold, negativeSpeechThreshold: $negativeSpeechThreshold, submitUserSpeechOnPause: $submitUserSpeechOnPause, numFramesToEmit: $numFramesToEmit, enableChunkEmission: $enableChunkEmission)';
   }
 }
 
@@ -140,14 +151,11 @@ class _VadSettingsDialogState extends State<VadSettingsDialog> {
               children: [
                 const Text('Model:'),
                 const SizedBox(width: 8),
-                DropdownButton<RecordingModel>(
+                DropdownButton<VadModel>(
                   value: tempSettings.model,
                   items: const [
-                    DropdownMenuItem(
-                        value: RecordingModel.legacy,
-                        child: Text('v4 (Legacy)')),
-                    DropdownMenuItem(
-                        value: RecordingModel.v5, child: Text('v5')),
+                    DropdownMenuItem(value: VadModel.v4, child: Text('v4')),
+                    DropdownMenuItem(value: VadModel.v5, child: Text('v5')),
                   ],
                   onChanged: (value) {
                     if (value != null) {
@@ -179,9 +187,7 @@ class _VadSettingsDialogState extends State<VadSettingsDialog> {
               children: [
                 Expanded(
                   child: Text(
-                    tempSettings.model == RecordingModel.legacy
-                        ? '1536'
-                        : '512',
+                    tempSettings.model == VadModel.v4 ? '1536' : '512',
                     style: const TextStyle(fontSize: 16),
                   ),
                 ),

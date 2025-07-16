@@ -128,19 +128,19 @@ class _VadManagerState extends State<VadManager> {
         ));
       });
       _uiController.scrollToBottom?.call();
-      debugPrint('Speech ended, recording added.');
+      debugPrint('Speech ended, recording added. ${samples.length} samples');
     });
 
     _vadHandler.onFrameProcessed.listen((frameData) {
-      final isSpeech = frameData.isSpeech;
-      final notSpeech = frameData.notSpeech;
-      final firstFiveSamples = frameData.frame.length >= 5
-          ? frameData.frame.sublist(0, 5)
-          : frameData.frame;
+      // final isSpeech = frameData.isSpeech;
+      // final notSpeech = frameData.notSpeech;
+      // final firstFiveSamples = frameData.frame.length >= 5
+      //     ? frameData.frame.sublist(0, 5)
+      //     : frameData.frame;
 
-      debugPrint(
-          'Frame processed - isSpeech: $isSpeech, notSpeech: $notSpeech');
-      debugPrint('First few audio samples: $firstFiveSamples');
+      // debugPrint(
+      //     'Frame processed - isSpeech: $isSpeech, notSpeech: $notSpeech');
+      // debugPrint('First few audio samples: $firstFiveSamples');
     });
 
     _vadHandler.onVADMisfire.listen((_) {
@@ -185,10 +185,16 @@ class _VadManagerState extends State<VadManager> {
       isPaused = false;
     }
 
+    // Old settings
+    print('_applySettings: Old settings: $settings');
+
     // Update settings
     setState(() {
       settings = newSettings;
     });
+
+    // New settings
+    print('_applySettings: New settings: $settings');
 
     // Dispose and recreate VAD handler
     await _vadHandler.dispose();
