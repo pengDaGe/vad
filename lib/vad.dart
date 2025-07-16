@@ -2,6 +2,6 @@
 
 library;
 
-export 'src/vad_handler.dart';
-export 'src/vad_iterator.dart';
-export 'src/vad_event.dart';
+export 'src/core/vad_handler.dart';
+export 'src/core/vad_iterator.dart';
+export 'src/core/vad_event.dart';
