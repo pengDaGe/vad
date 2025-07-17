@@ -22,6 +22,18 @@ dev_dependencies:
   flutter_lints: ^4.0.0
   import_sorter: ^4.6.0
 
+dependency_overrides:
+  record:
+    git:
+      url: https://github.com/keyur2maru/record.git
+      ref: master
+      path: record
+  record_macos:
+    git:
+      url: https://github.com/keyur2maru/record.git
+      ref: master
+      path: record_macos
+
 flutter:
   uses-material-design: true
   assets:
