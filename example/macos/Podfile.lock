@@ -1,0 +1,55 @@
+PODS:
+  - audioplayers_darwin (0.0.1):
+    - Flutter
+    - FlutterMacOS
+  - FlutterMacOS (1.0.0)
+  - onnxruntime-c (1.22.0)
+  - onnxruntime-objc (1.22.0):
+    - onnxruntime-objc/Core (= 1.22.0)
+  - onnxruntime-objc/Core (1.22.0):
+    - onnxruntime-c (= 1.22.0)
+  - path_provider_foundation (0.0.1):
+    - Flutter
+    - FlutterMacOS
+  - record_macos (1.0.0):
+    - FlutterMacOS
+  - vad (0.0.6):
+    - FlutterMacOS
+    - onnxruntime-objc (= 1.22.0)
+
+DEPENDENCIES:
+  - audioplayers_darwin (from `Flutter/ephemeral/.symlinks/plugins/audioplayers_darwin/darwin`)
+  - FlutterMacOS (from `Flutter/ephemeral`)
+  - path_provider_foundation (from `Flutter/ephemeral/.symlinks/plugins/path_provider_foundation/darwin`)
+  - record_macos (from `Flutter/ephemeral/.symlinks/plugins/record_macos/macos`)
+  - vad (from `Flutter/ephemeral/.symlinks/plugins/vad/macos`)
+
+SPEC REPOS:
+  trunk:
+    - onnxruntime-c
+    - onnxruntime-objc
+
+EXTERNAL SOURCES:
+  audioplayers_darwin:
+    :path: Flutter/ephemeral/.symlinks/plugins/audioplayers_darwin/darwin
+  FlutterMacOS:
+    :path: Flutter/ephemeral
+  path_provider_foundation:
+    :path: Flutter/ephemeral/.symlinks/plugins/path_provider_foundation/darwin
+  record_macos:
+    :path: Flutter/ephemeral/.symlinks/plugins/record_macos/macos
+  vad:
+    :path: Flutter/ephemeral/.symlinks/plugins/vad/macos
+
+SPEC CHECKSUMS:
+  audioplayers_darwin: 4f9ca89d92d3d21cec7ec580e78ca888e5fb68bd
+  FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
+  onnxruntime-c: 7f778680e96145956c0a31945f260321eed2611a
+  onnxruntime-objc: 83d28b87525bd971259a66e153ea32b5d023de19
+  path_provider_foundation: 080d55be775b7414fd5a5ef3ac137b97b097e564
+  record_macos: 295d70bd5fb47145df78df7b80e6697cd18403c0
+  vad: c269f26ac93002d9ca13ed1dc9c5fa5438092ddb
+
+PODFILE CHECKSUM: c4dda72bffbbf606876d102a78d4d3a0e4c9b017
+
+COCOAPODS: 1.16.2
