@@ -50,7 +50,7 @@ class VadEvent {
   /// Human-readable description of the event
   final String message;
 
-  /// Raw audio data for speech segments (available for 'end' events)
+  /// Raw audio data for speech segments (available for 'end' and 'chunk' events)
   final Uint8List? audioData;
 
   /// Speech probability scores (available for 'frameProcessed' events)
@@ -58,6 +58,9 @@ class VadEvent {
 
   /// Raw audio frame data as floating point values (available for 'frameProcessed' events)
   final List<double>? frameData;
+
+  /// Indicates if this is the final chunk in a sequence (only available for 'chunk' events)
+  final bool? isFinal;
 
   /// Creates a VAD event with the specified parameters
   VadEvent({
@@ -67,5 +70,6 @@ class VadEvent {
     this.audioData,
     this.probabilities,
     this.frameData,
+    this.isFinal,
   });
 }

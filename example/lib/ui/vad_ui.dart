@@ -220,7 +220,7 @@ class _VadUIState extends State<VadUI> {
         iconColor = hasAudio ? Colors.teal[100]! : Colors.white;
         backgroundColor = hasAudio ? Colors.teal[900]! : Colors.teal;
         typeTitle =
-            'Audio Chunk ${recording.chunkIndex != null ? '#${recording.chunkIndex}' : ''}';
+            'Audio Chunk ${recording.chunkIndex != null ? '#${recording.chunkIndex}' : ''}${recording.isFinal == true ? ' [FINAL]' : ''}';
         break;
     }
 

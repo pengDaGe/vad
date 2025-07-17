@@ -41,7 +41,7 @@ class VadSettings {
     this.negativeSpeechThreshold = 0.35,
     this.submitUserSpeechOnPause = false,
     this.numFramesToEmit = 10,
-    this.enableChunkEmission = true,
+    this.enableChunkEmission = false,
   });
 
   // Clone the settings

@@ -73,6 +73,28 @@ class _VadManagerState extends State<VadManager> {
       model: settings.modelString,
       numFramesToEmit:
           settings.enableChunkEmission ? settings.numFramesToEmit : 0,
+      recordConfig: const RecordConfig(
+        encoder: AudioEncoder.pcm16bits,
+        sampleRate: 16000,
+        bitRate: 16,
+        numChannels: 1,
+        echoCancel: true,
+        autoGain: true,
+        noiseSuppress: true,
+        androidConfig: AndroidRecordConfig(
+          speakerphone: true,
+          audioSource: AndroidAudioSource.voiceCommunication,
+          audioManagerMode: AudioManagerMode.modeInCommunication,
+        ),
+        iosConfig: IosRecordConfig(
+          categoryOptions: [
+            IosAudioCategoryOption.defaultToSpeaker,
+            IosAudioCategoryOption.allowBluetooth,
+            IosAudioCategoryOption.allowBluetoothA2DP,
+          ],
+          manageAudioSession: true,
+        ),
+      ),
       // baseAssetPath: '/assets/', // Alternative to using the CDN (see README.md)
       // onnxWASMBasePath: '/assets/', // Alternative to using the CDN (see README.md)
     );
@@ -159,18 +181,19 @@ class _VadManagerState extends State<VadManager> {
       debugPrint('Error: $message');
     });
 
-    _vadHandler.onEmitChunk.listen((List<double> samples) {
+    _vadHandler.onEmitChunk.listen((chunkData) {
       if (settings.enableChunkEmission) {
         setState(() {
           recordings.add(Recording(
-            samples: samples,
+            samples: chunkData.samples,
             type: RecordingType.chunk,
             chunkIndex: _chunkCounter++,
+            isFinal: chunkData.isFinal,
           ));
         });
         _uiController.scrollToBottom?.call();
         debugPrint(
-            'Audio chunk emitted #$_chunkCounter (${samples.length} samples)');
+            'Audio chunk emitted #$_chunkCounter (${chunkData.samples.length} samples)${chunkData.isFinal ? ' [FINAL]' : ''}');
       }
     });
   }
@@ -185,16 +208,11 @@ class _VadManagerState extends State<VadManager> {
       isPaused = false;
     }
 
-    // Old settings
-    print('_applySettings: Old settings: $settings');
-
     // Update settings
     setState(() {
       settings = newSettings;
+      print('settings: $settings');
     });
-
-    // New settings
-    print('_applySettings: New settings: $settings');
 
     // Dispose and recreate VAD handler
     await _vadHandler.dispose();

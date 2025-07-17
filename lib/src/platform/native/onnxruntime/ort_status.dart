@@ -1,7 +1,7 @@
 import 'dart:ffi' as ffi;
 
 import 'package:ffi/ffi.dart';
-import 'package:vad/src/bindings/onnxruntime_bindings_generated.dart'
+import 'package:vad/src/platform/native/bindings/onnxruntime_bindings_generated.dart'
     as bg;
 import 'package:vad/src/platform/native/onnxruntime/ort_env.dart';
 

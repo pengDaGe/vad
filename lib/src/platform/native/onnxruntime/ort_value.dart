@@ -1,17 +1,15 @@
-// Minimal OrtValue implementation for VAD inference only
-
 // ignore_for_file: public_member_api_docs
 
 import 'dart:ffi' as ffi;
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
-import 'package:vad/src/bindings/onnxruntime_bindings_generated.dart' as bg;
+import 'package:vad/src/platform/native/bindings/onnxruntime_bindings_generated.dart'
+    as bg;
 import 'package:vad/src/platform/native/onnxruntime/ort_env.dart';
 import 'package:vad/src/platform/native/onnxruntime/ort_status.dart';
 import 'package:vad/src/platform/native/utils/list_shape_extension.dart';
 
-// Base class for OrtValue
 abstract class OrtValue {
   late ffi.Pointer<bg.OrtValue> _ptr;
 
@@ -36,7 +34,8 @@ class OrtValueTensor extends OrtValue {
     try {
       _info = OrtTensorTypeAndShapeInfo(ptr);
     } catch (e) {
-      throw Exception('Failed to get tensor info from pointer ${ptr.address}: $e');
+      throw Exception(
+          'Failed to get tensor info from pointer ${ptr.address}: $e');
     }
     if (dataPtr != null) {
       _dataPtr = dataPtr;
@@ -47,7 +46,6 @@ class OrtValueTensor extends OrtValue {
     return OrtValueTensor(ffi.Pointer.fromAddress(address));
   }
 
-  // Create tensor from single value (for sample rate)
   static OrtValueTensor createTensorWithData(dynamic data) {
     if (data is int) {
       return createTensorWithDataList(<int>[data], []);
@@ -56,7 +54,6 @@ class OrtValueTensor extends OrtValue {
         'Invalid element type - VAD only supports int for single values');
   }
 
-  // Create tensor from list (for audio frames and model states)
   static OrtValueTensor createTensorWithDataList(List data,
       [List<int>? shape]) {
     shape ??= data.shape;
@@ -127,34 +124,33 @@ class OrtValueTensor extends OrtValue {
 
   @override
   dynamic get value {
-    // Check tensor element type
     final elementType = _info._tensorElementType;
-    
-    if (elementType == bg.ONNXTensorElementDataType.ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64) {
-      // Handle int64 tensors (like sample rate)
+
+    if (elementType ==
+        bg.ONNXTensorElementDataType.ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64) {
       final dataPtrPtr = calloc<ffi.Pointer<ffi.Int64>>();
       final statusPtr = OrtEnv.instance.ortApiPtr.ref.GetTensorMutableData
-          .asFunction<
-              bg.OrtStatusPtr Function(ffi.Pointer<bg.OrtValue>,
-                  ffi.Pointer<ffi.Pointer<ffi.Void>>)>()(_ptr, dataPtrPtr.cast());
+              .asFunction<
+                  bg.OrtStatusPtr Function(ffi.Pointer<bg.OrtValue>,
+                      ffi.Pointer<ffi.Pointer<ffi.Void>>)>()(
+          _ptr, dataPtrPtr.cast());
       OrtStatus.checkOrtStatus(statusPtr);
       final dataPtr = dataPtrPtr.value;
-      
+
       final tensorShapeElementCount = _info._tensorShapeElementCount;
       final data = <int>[];
-      
+
       for (int i = 0; i < tensorShapeElementCount; ++i) {
         data.add(dataPtr[i]);
       }
       calloc.free(dataPtrPtr);
-      
+
       if (_info._dimensionsCount == 0) {
-        return data[0]; // scalar
+        return data[0];
       } else {
         return data.reshape<int>(_info._tensorShape);
       }
     } else {
-      // Handle float32 tensors (default for audio data)
       final dataPtrPtr = calloc<ffi.Pointer<ffi.Float>>();
       final dataPtr = _getTensorMutableData(dataPtrPtr);
       final tensorShapeElementCount = _info._tensorShapeElementCount;
@@ -166,7 +162,7 @@ class OrtValueTensor extends OrtValue {
       calloc.free(dataPtrPtr);
 
       if (_info._dimensionsCount == 0) {
-        return data[0]; // scalar
+        return data[0];
       } else {
         return data.reshape<double>(_info._tensorShape);
       }
@@ -193,12 +189,12 @@ class OrtValueTensor extends OrtValue {
   }
 }
 
-// Tensor info helper
 class OrtTensorTypeAndShapeInfo {
   int _dimensionsCount = 0;
   int _tensorShapeElementCount = 0;
   List<int> _tensorShape = [];
-  bg.ONNXTensorElementDataType _tensorElementType = bg.ONNXTensorElementDataType.ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
+  bg.ONNXTensorElementDataType _tensorElementType =
+      bg.ONNXTensorElementDataType.ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
 
   OrtTensorTypeAndShapeInfo(ffi.Pointer<bg.OrtValue> ortValuePtr) {
     final infoPtrPtr = calloc<ffi.Pointer<bg.OrtTensorTypeAndShapeInfo>>();
@@ -276,15 +272,16 @@ class OrtTensorTypeAndShapeInfo {
     calloc.free(typePtr);
     return bg.ONNXTensorElementDataType.values.firstWhere(
       (e) => e.value == type,
-      orElse: () => bg.ONNXTensorElementDataType.ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED,
+      orElse: () =>
+          bg.ONNXTensorElementDataType.ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED,
     );
   }
 }
 
 enum ONNXTensorElementDataType {
   undefined(0),
-  float(1), // Used for audio frames and model states
-  int64(7); // Used for sample rate input
+  float(1),
+  int64(7);
 
   final int value;
   const ONNXTensorElementDataType(this.value);

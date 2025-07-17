@@ -4,7 +4,6 @@ import 'dart:typed_data';
 
 extension ListShape on List {
   /// Reshape list to a another [shape]
-  /// VAD only uses 2D and 3D reshaping for model outputs
   List reshape<T>(List<int> shape) {
     var dims = shape.length;
 
@@ -17,7 +16,7 @@ extension ListShape on List {
       }
     }
 
-    // For dims > 3, use generic approach (unlikely for VAD)
+    // For dims > 3, use generic approach
     var reshapedList = flatten<dynamic>();
     for (var i = dims - 1; i > 0; i--) {
       var temp = [];
@@ -60,7 +59,6 @@ extension ListShape on List {
     return reshapedList;
   }
 
-
   /// Get shape of the list
   List<int> get shape {
     if (isEmpty) {
@@ -76,7 +74,6 @@ extension ListShape on List {
   }
 
   /// Flatten this list, [T] is element type
-  /// Used by VAD to flatten model state lists before tensor creation
   List<T> flatten<T>() {
     var flat = <T>[];
     forEach((e) {
@@ -90,7 +87,6 @@ extension ListShape on List {
   }
 
   /// Get the element type of a nested list
-  /// Used by VAD to determine tensor element type
   dynamic element() {
     var list = this as dynamic;
     while (list is List && !_isTypedList(list)) {
@@ -99,12 +95,12 @@ extension ListShape on List {
     return list;
   }
 
-  /// Check if list is a typed list used by VAD
+  /// Check if list is a typed list
   bool _isTypedList(dynamic list) {
     // VAD only uses these typed lists:
     return list is Float32List || // Audio frames and model states
-           list is Int64List ||   // Tensor dimensions
-           list is Int16List ||   // Audio conversion
-           list is Uint8List;     // Raw byte data
+        list is Int64List || // Tensor dimensions
+        list is Int16List || // Audio conversion
+        list is Uint8List; // Raw byte data
   }
 }

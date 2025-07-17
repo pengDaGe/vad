@@ -5,7 +5,8 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart';
 
 import 'package:ffi/ffi.dart';
-import 'package:vad/src/bindings/onnxruntime_bindings_generated.dart' as bg;
+import 'package:vad/src/platform/native/bindings/onnxruntime_bindings_generated.dart'
+    as bg;
 import 'package:vad/src/platform/native/onnxruntime/ort_env.dart';
 import 'package:vad/src/platform/native/onnxruntime/ort_status.dart';
 import 'package:vad/src/platform/native/onnxruntime/ort_value.dart';

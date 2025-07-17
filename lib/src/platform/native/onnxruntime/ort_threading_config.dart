@@ -2,7 +2,6 @@
 
 import 'dart:io';
 
-/// Configuration for ONNX Runtime threading
 class OrtThreadingConfig {
   final int intraOpNumThreads;
   final int interOpNumThreads;
@@ -14,7 +13,6 @@ class OrtThreadingConfig {
     this.useGlobalThreadPool = false,
   });
 
-  /// Get optimal threading configuration for current platform
   factory OrtThreadingConfig.platformOptimal() {
     if (Platform.isIOS || Platform.isAndroid) {
       // Mobile platforms: Use 2-4 threads for intra-op based on cores

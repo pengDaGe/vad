@@ -2,8 +2,9 @@
 
 import 'dart:ffi' as ffi;
 import 'package:ffi/ffi.dart';
-import 'package:vad/src/bindings/bindings.dart';
-import 'package:vad/src/bindings/onnxruntime_bindings_generated.dart' as bg;
+import 'package:vad/src/platform/native/bindings/bindings.dart';
+import 'package:vad/src/platform/native/bindings/onnxruntime_bindings_generated.dart'
+    as bg;
 import 'package:vad/src/platform/native/onnxruntime/ort_status.dart';
 
 /// A class about onnx runtime environment.
@@ -72,7 +73,6 @@ class OrtEnv {
     return _ptr!;
   }
 
-
   void _setLanguageProjection() {
     if (_ptr == null) {
       init();
@@ -130,7 +130,6 @@ enum OrtLoggingLevel {
 
   const OrtLoggingLevel(this.value);
 }
-
 
 class OrtAllocator {
   late ffi.Pointer<bg.OrtAllocator> _ptr;

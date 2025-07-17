@@ -13,11 +13,13 @@ class Recording {
   final RecordingType type;
   final DateTime timestamp;
   final int? chunkIndex; // For tracking chunk sequence
+  final bool? isFinal; // For tracking final chunk in sequence
 
   Recording({
     this.samples,
     required this.type,
     DateTime? timestamp,
     this.chunkIndex,
+    this.isFinal,
   }) : timestamp = timestamp ?? DateTime.now();
 }
