@@ -217,7 +217,7 @@ class VadHandler {
 
       _vadIterator = await VadIterator.create(
         isDebug: _isDebug,
-        sampleRate: 16000,
+        sampleRate: 24000,
         frameSamples: frameSamples,
         positiveSpeechThreshold: positiveSpeechThreshold,
         negativeSpeechThreshold: negativeSpeechThreshold,
@@ -281,7 +281,7 @@ class VadHandler {
     final config = recordConfig ??
         const RecordConfig(
             encoder: AudioEncoder.pcm16bits,
-            sampleRate: 16000,
+            sampleRate: 24000,
             bitRate: 16,
             numChannels: 1,
             echoCancel: true,
